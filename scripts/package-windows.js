@@ -15,6 +15,9 @@ import { createHash } from "node:crypto";
 if (process.platform !== "win32" || !["x64", "arm64"].includes(process.arch))
   throw new Error("Build this portable package on Windows x64 or arm64.");
 const root = fileURLToPath(new URL("../", import.meta.url));
+const { version } = JSON.parse(
+  await readFile(join(root, "package.json"), "utf8"),
+);
 await readFile(join(root, "dist", "index.html"));
 const releases = join(root, "release");
 await mkdir(releases, { recursive: true });
@@ -101,7 +104,7 @@ await writeFile(
   JSON.stringify(
     {
       name: "solseer-portable",
-      version: "1.0.0",
+      version,
       private: true,
       type: "module",
     },
