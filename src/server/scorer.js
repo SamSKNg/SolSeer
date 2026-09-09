@@ -1,3 +1,5 @@
+import { updateBurstMemory } from "./burst-memory.js";
+
 export const THRESHOLDS = {
   minimumPlayers: 13,
   earlyMaximumPlayers: 18,
@@ -44,9 +46,18 @@ export function score(
   const isFresh = observationAgeMs <= THRESHOLDS.freshnessMs;
   const observedThisPoll =
     currentPoll === (history.at(-1)?.poll ?? history.length - 1);
+  const previous = history.at(-2);
+  const awaitingFreshSample = Boolean(
+    previous && lastSeen - previous.at > THRESHOLDS.freshnessMs,
+  );
   const openSlots = Math.max(0, capacity - players);
-  const early = growthIn(record, THRESHOLDS.earlyWindowMs);
-  const rapid = growthIn(record, THRESHOLDS.rapidWindowMs);
+  // The first observation after a stale gap is a baseline, never a lead.
+  const early = awaitingFreshSample
+    ? null
+    : growthIn(record, THRESHOLDS.earlyWindowMs);
+  const rapid = awaitingFreshSample
+    ? null
+    : growthIn(record, THRESHOLDS.rapidWindowMs);
   const growthQualifies =
     isFresh &&
     openSlots > 0 &&
@@ -65,13 +76,18 @@ export function score(
     players >= THRESHOLDS.minimumPlayers &&
     (early?.gain ?? 0) >= THRESHOLDS.earlyGain;
   const evidence = strongGrowth ? rapid : early;
-  const signalHoldPollsRemaining = Math.max(
-    0,
-    (record.signalHold?.expiresAtPoll ?? currentPoll) - currentPoll,
-  );
+  const signalHoldPollsRemaining =
+    awaitingFreshSample ||
+    (record.burstMemory &&
+      (now >= record.burstMemory.expiresAt ||
+        currentPoll >= (record.burstMemory.removeAtPoll ?? Infinity)))
+      ? 0
+      : Math.max(
+          0,
+          (record.signalHold?.expiresAtPoll ?? currentPoll) - currentPoll,
+        );
   const liveRule =
     observedThisPoll && (growthQualifies || strongGrowth || filledBurst);
-  const previous = history.at(-2);
   const deltaPoll =
     previous &&
     lastSeen - previous.at <= THRESHOLDS.freshnessMs &&
@@ -79,10 +95,32 @@ export function score(
       ? players - previous.players
       : null;
 
+  const burst =
+    !awaitingFreshSample &&
+    record.burstMemory?.capacity === capacity &&
+    currentPoll < (record.burstMemory?.removeAtPoll ?? Infinity) &&
+    now < (record.burstMemory?.expiresAt ?? 0)
+      ? record.burstMemory
+      : null;
+  const retainedPopulation =
+    burst && burst.decliningAt == null && players >= burst.peakPlayers;
+  const growingNow = liveRule && deltaPoll > 0;
+
   let alert = deltaPoll === null ? "warmup" : "watch";
-  if (liveRule) alert = strongGrowth ? "cluster" : "potential";
-  else if (signalHoldPollsRemaining > 0) alert = "potential";
+  if (growingNow) alert = strongGrowth ? "cluster" : "potential";
+  else if (burst || signalHoldPollsRemaining > 0) alert = "potential";
   const candidate = ["potential", "cluster"].includes(alert);
+  const signalState = !candidate
+    ? null
+    : burst?.decliningAt != null
+      ? "declining"
+      : !openSlots
+        ? "full"
+        : growingNow
+          ? "growing"
+          : burst?.retainedObserved && retainedPopulation
+            ? "holding"
+            : "recent";
   const followUpConfirmed =
     candidate &&
     isFresh &&
@@ -108,13 +146,33 @@ export function score(
     nearFullSince === null ? 0 : lastSeen - nearFullSince;
   const sustainedNearFull = nearFullDurationMs >= THRESHOLDS.sustainedMs;
   const reasons = [];
-  if (liveRule)
+  if (growingNow)
     reasons.push(
       `+${evidence.gain} net players in ${Number((evidence.elapsed / 1000).toFixed(1))}s`,
     );
-  else if (candidate)
+  else if (burst) {
+    const description =
+      signalState === "holding"
+        ? "Holding population"
+        : signalState === "declining"
+          ? `Population fell from the post-burst peak of ${burst.peakPlayers}; old lead is expiring`
+          : signalState === "full"
+            ? "Full after a burst"
+            : !retainedPopulation
+              ? "Population slipped; watching next observation"
+              : "Recent burst; awaiting a population follow-up";
+    reasons.push(
+      `${description}; burst +${burst.gain} in ${Number((burst.windowMs / 1000).toFixed(1))}s`,
+    );
+  } else if (candidate)
     reasons.push(
       `Recent ${record.signalHold.reason}; ${signalHoldPollsRemaining} hold polls remaining`,
+    );
+  if (burst)
+    reasons.push(
+      burst.decliningAt != null
+        ? "Removal after the next completed poll unless a new burst qualifies"
+        : `${Math.ceil((burst.expiresAt - now) / 1000)}s visibility remaining (fresh retained readings can extend, 2m maximum)`,
     );
   if (followUpConfirmed)
     reasons.push("Population held on follow-up (not biome confirmation)");
@@ -125,6 +183,10 @@ export function score(
   if (candidate && !openSlots)
     reasons.push("Full at last observation; no open-slot notification");
   if (!isFresh) reasons.push("Stale observation; awaiting a new sample");
+  else if (awaitingFreshSample)
+    reasons.push(
+      "Fresh baseline after a stale gap; awaiting a second observation",
+    );
 
   const growthPer10s = evidence
     ? (Math.max(0, evidence.gain) * 10000) / evidence.elapsed
@@ -142,9 +204,15 @@ export function score(
     followUpConfirmed: Boolean(followUpConfirmed),
     observationAgeMs,
     isFresh,
+    awaitingFreshSample,
+    signalState,
+    burstRemainingMs: burst ? burst.expiresAt - now : 0,
+    burstGainRetained: burst
+      ? Math.min(burst.gain, Math.max(0, players - burst.baselinePlayers))
+      : null,
     openSlots,
     notificationEligible: Boolean(
-      observedThisPoll && (growthQualifies || strongGrowth),
+      growingNow && (growthQualifies || strongGrowth),
     ),
     nearFullDurationMs,
     sustainedNearFull,
@@ -161,8 +229,16 @@ export function updateSignalHold(record, previousPlayers, poll) {
     previousPlayers !== undefined && record.players < previousPlayers;
   const capacityChanged =
     previous && (previous.capacity ?? record.capacity) !== record.capacity;
-  if (dropped || capacityChanged) record.growthFloorAt = record.lastSeen;
-  if (capacityChanged) record.signalHold = null;
+  const staleGap =
+    previous && record.lastSeen - previous.at > THRESHOLDS.freshnessMs;
+  if (dropped || capacityChanged || staleGap)
+    record.growthFloorAt = record.lastSeen;
+  // Poll-based holds can outlive a cooldown. Never revive that old episode
+  // when the server returns; two new observations must establish fresh growth.
+  if (capacityChanged || staleGap) {
+    record.signalHold = null;
+    record.burstMemory = null;
+  }
   const hold = record.signalHold;
   if (
     hold &&
@@ -203,4 +279,5 @@ export function updateSignalHold(record, previousPlayers, poll) {
           : "early growth",
     };
   }
+  updateBurstMemory(record, current, poll);
 }

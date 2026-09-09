@@ -54,10 +54,12 @@ test("two-poll grace period renews only while a fresh observation meets a rule, 
     assert.equal(held.signalHoldPollsRemaining, 1);
     assert.equal(held.signalHold.expiresAtPoll, 6);
     const expired = await f.poll(17);
-    assert.equal(expired.alert, "watch");
+    assert.equal(expired.alert, "potential");
+    assert.equal(expired.signalState, "holding");
+    assert.equal(expired.notificationEligible, false);
     assert.equal(expired.signalHoldPollsRemaining, 0);
     f.tracker.recordJoin("job");
-    assert.equal(f.store.joins()[0].alert, "watch");
+    assert.equal(f.store.joins()[0].signalState, "holding");
   } finally {
     f.store.close();
   }
@@ -84,12 +86,12 @@ test("a population drop preserves the hold but cannot resurrect an old +2 baseli
   }
 });
 
-test("missing servers age holds by global polls; snapshots and wall time do not consume polls", async () => {
+test("stale burst memory expires on wall time even when no further polls completed", async () => {
   const f = fixture();
   try {
     await f.poll(15);
     await f.poll(17);
-    f.advance(160000);
+    f.advance(21000);
     assert.equal(f.tracker.snapshot().rows[0].signalHoldPollsRemaining, 2);
     assert.equal(f.tracker.snapshot().rows[0].signalHoldPollsRemaining, 2);
     const row = await f.poll(null);
@@ -97,6 +99,8 @@ test("missing servers age holds by global polls; snapshots and wall time do not 
     assert.equal(row.alert, "potential");
     assert.equal(row.isFresh, false);
     assert.equal(row.notificationEligible, false);
+    f.advance(160000);
+    assert.equal(f.tracker.snapshot().rows.length, 0);
     assert.equal(await f.poll(null), undefined); // Normal freshness filter resumes.
   } finally {
     f.store.close();
@@ -157,25 +161,71 @@ test("rapid signals remain recent leads during the grace period while pace and c
     assert.equal(dropped.signalHoldPollsRemaining, 1);
     assert.ok((dropped.growthPer10s ?? 0) < strong.growthPer10s);
     assert.equal(dropped.notificationEligible, false);
+    assert.equal((await f.poll(15)).alert, "watch"); // Next completed poll ends the decline grace.
     assert.equal((await f.poll(15)).alert, "watch");
   } finally {
     f.store.close();
   }
 });
 
-test("only already-held candidates can temporarily survive a drop below 13, with accurate counts", async () => {
+test("a large drop below the display floor removes the lead immediately but keeps its history", async () => {
   const f = fixture();
   try {
     assert.equal(await f.poll(12), undefined);
     await f.poll(13);
     await f.poll(15);
     const dropped = await f.poll(12);
-    assert.equal(dropped.players, 12);
-    assert.equal(dropped.alert, "potential");
-    assert.equal(dropped.signalHoldPollsRemaining, 1);
+    assert.equal(dropped, undefined);
+    assert.equal(f.tracker.records.get("job").players, 12);
     assert.equal(await f.poll(null), undefined);
     assert.equal(f.tracker.records.has("job"), true);
   } finally {
     f.store.close();
+  }
+});
+
+test("pending minus-one removal waits for a completed poll, including other pages and errors", async () => {
+  for (const failure of [false, true]) {
+    const f = fixture();
+    try {
+      await f.poll(13);
+      await f.poll(16);
+      const declining = await f.poll(15);
+      assert.equal(declining.signalState, "declining");
+      assert.equal(declining.burstMemory.removeAtPoll, 4);
+      f.store.cooldown(f.tracker.nextAt + 1000);
+      await f.tracker.poll(); // Quota wait is not a completed poll.
+      assert.equal(f.tracker.snapshot().rows[0].signalState, "declining");
+      assert.equal(f.tracker.polls, 3);
+      f.advance(7000);
+      let finish;
+      f.tracker.fetchFn = () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        });
+      const pending = f.tracker.poll();
+      assert.equal(f.tracker.snapshot().rows[0].signalState, "declining");
+      finish(
+        failure
+          ? new Response("", { status: 500 })
+          : new Response(JSON.stringify({ data: [] })),
+      );
+      await pending;
+      const removed = f.tracker.snapshot().rows[0];
+      assert.equal(removed.alert, "watch");
+      assert.equal(removed.signalHoldPollsRemaining, 0);
+      assert.equal(removed.burstRemainingMs, 0);
+      assert.equal(removed.history.length, 3); // A missing page isn't a new observation.
+      assert.equal(f.tracker.snapshot().rows[0].alert, "watch");
+      f.tracker.fetchFn = async () =>
+        new Response(
+          JSON.stringify({
+            data: [{ id: "job", playing: 15, maxPlayers: 20 }],
+          }),
+        );
+      assert.equal((await f.poll(15)).alert, "watch"); // No resurrection on a flat return.
+    } finally {
+      f.store.close();
+    }
   }
 });

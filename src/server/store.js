@@ -16,6 +16,7 @@ export class Store {
       players: row.players ?? null,
       capacity: row.capacity ?? null,
       alert: row.alert ?? null,
+      signalState: row.signalState ?? null,
       growthPer10s: row.growthPer10s ?? null,
     });
     this.#history.sort((a, b) => b.at - a.at || b.id - a.id);

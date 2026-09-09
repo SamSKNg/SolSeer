@@ -126,18 +126,23 @@ test("UI excludes below-13 servers but tracking retains already-fetched baseline
   }
 });
 
-test("authenticated schedule is three seconds start-to-start with a rolling twenty-attempt cap", async () => {
+test("authenticated two-page cycles start every three seconds with a rolling forty-attempt cap", async () => {
   const store = new Store();
   let now = 1000000;
   const starts = [];
   const tracker = new Tracker(store, {
     ...AUTHENTICATED_POLLING,
     now: () => now,
-    fetchFn: async () => {
+    fetchFn: async (url) => {
       starts.push(now);
       now += 100;
       return new Response(
-        '{"data":[{"id":"job","playing":15,"maxPlayers":20}]}',
+        JSON.stringify({
+          data: [{ id: "job", playing: 15, maxPlayers: 20 }],
+          nextPageCursor: new URL(url).searchParams.has("cursor")
+            ? null
+            : "page2",
+        }),
       );
     },
   });
@@ -146,15 +151,23 @@ test("authenticated schedule is three seconds start-to-start with a rolling twen
       await tracker.poll();
       if (i < 19) now = tracker.nextAt;
     }
-    assert.ok(starts.slice(1).every((start, i) => start - starts[i] === 3000));
+    const cycles = starts.filter((_, i) => i % 2 === 0);
+    assert.ok(cycles.slice(1).every((start, i) => start - cycles[i] === 3000));
+    assert.ok(
+      starts
+        .filter((_, i) => i % 2 === 1)
+        .every((start, i) => start - cycles[i] === 100),
+    );
     assert.equal(tracker.nextAt, 1060250);
-    assert.equal(tracker.snapshot().requestLimit, 20);
+    assert.equal(tracker.snapshot().requestLimit, 40);
+    assert.equal(tracker.snapshot().totalRequests, 40);
+    assert.equal(tracker.snapshot().polls, 20);
     assert.equal(tracker.snapshot().pollIntervalMs, 3000);
     await tracker.poll();
-    assert.equal(starts.length, 20);
+    assert.equal(starts.length, 40);
     now = tracker.nextAt;
     await tracker.poll();
-    assert.equal(starts.length, 21);
+    assert.equal(starts.length, 42);
   } finally {
     store.close();
   }

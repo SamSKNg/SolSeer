@@ -1,0 +1,118 @@
+.gallery .signal-section-heading {
+  flex-wrap: wrap;
+  gap: 16px;
+}
+.gallery .signal-heading-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px 20px;
+}
+.signal-view-switch {
+  display: inline-flex;
+  border: 1px solid #ffffff30;
+  padding: 3px;
+  gap: 3px;
+}
+.signal-view-switch button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 0;
+  background: transparent;
+  color: #aaa79e;
+  font: inherit;
+  font-size: 12px;
+}
+.signal-view-switch button[aria-pressed="true"] {
+  background: #e5dfcf;
+  color: #171715;
+}
+.signal-view-switch button:hover:not([aria-pressed="true"]) {
+  background: #ffffff0c;
+  color: #eee8da;
+}
+.signal-view-switch button:focus-visible {
+  outline: 2px solid #eee8da;
+  outline-offset: 4px;
+}
+.gallery .signal-index {
+  margin-inline: 3%;
+  min-width: 0;
+}
+.signal-index-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));
+  gap: 32px;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.signal-index-entry {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.signal-index-number {
+  font:
+    10px/1.6 ui-monospace,
+    monospace;
+  letter-spacing: 0.15em;
+  color: #b4ae9f;
+  margin-bottom: 10px;
+}
+.gallery .signal-index .signal-card {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  margin: 0;
+  transform: none;
+  padding: 18px 0 0;
+}
+.signal-index .signal-top,
+.signal-index .signal-footer {
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.gallery .signal-index .signal-footer {
+  margin-top: auto;
+  padding-top: 16px;
+}
+.signal-index .signal-reason,
+.signal-index .subtle {
+  overflow-wrap: anywhere;
+}
+.signal-index-empty {
+  display: grid;
+  align-items: center;
+  min-height: 360px;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .gallery:not(.motion-paused) .signal-index-entry {
+    animation: signal-index-arrive 300ms ease-out both;
+  }
+  @keyframes signal-index-arrive {
+    from {
+      opacity: 0;
+      transform: translateY(8px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+}
+@media (max-width: 700px) {
+  .gallery .signal-section-heading {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .gallery .signal-heading-actions {
+    justify-content: flex-start;
+  }
+}

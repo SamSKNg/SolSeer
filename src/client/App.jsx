@@ -19,12 +19,14 @@ import {
   Pause,
   Play,
   Settings2,
+  GalleryHorizontal,
+  LayoutGrid,
 } from "lucide-react";
 import "./styles.css";
 import { PollCountdown } from "./PollCountdown.jsx";
 import { Sparkline } from "./Sparkline.jsx";
 import { ReflectionScene } from "./ReflectionScene.jsx";
-import { SignalCarousel } from "./SignalCarousel.jsx";
+import { SignalView } from "./SignalView.jsx";
 import { CopyServerLink } from "./CopyServerLink.jsx";
 import "./reflection.css";
 import "./gallery.css";
@@ -42,6 +44,10 @@ import {
 const labels = signalLabels;
 const pace = (row) =>
   row.growthPer10s == null ? "—" : row.growthPer10s.toFixed(1);
+const peerSummary = (row) =>
+  row.peerGrowth?.percentile == null
+    ? `Insufficient comparison data (${row.peerGrowth?.count ?? 0}/${row.peerGrowth?.minimumPeers ?? 20} peers)`
+    : `Growing faster than ${row.peerGrowth.percentile}% of ${row.peerGrowth.count} comparable sampled servers`;
 const observationAge = (row, now) =>
   `${Math.max(0, Math.floor(((now ?? row.lastSeen) - row.lastSeen) / 1000))}s`;
 const delta = (n) => (n == null ? "—" : `${n > 0 ? "+" : ""}${n}`);
@@ -102,6 +108,7 @@ export function App() {
     [limit, setLimit] = useState(20),
     [copied, setCopied] = useState(false);
   const [serversOpen, setServersOpen] = useState(false);
+  const [signalView, setSignalView] = useState("carousel");
   const [dismissed, setDismissed] = useState(() => new Set());
   const pageRef = useScrollReveals(tab, motionPaused);
   const drawerRef = useRef(null);
@@ -169,13 +176,15 @@ export function App() {
   }, [selected]);
   const alerts = data.rows
     .filter((r) => ["cluster", "potential"].includes(r.alert))
+    .sort((a, b) => b.players - a.players || compareSignals(a, b));
+  const notifications = alerts
+    .filter(
+      (r) =>
+        isActionable(r) &&
+        r.notificationEligible !== false &&
+        !dismissed.has(`${r.id}:${r.alert}`),
+    )
     .sort(compareSignals);
-  const notifications = alerts.filter(
-    (r) =>
-      isActionable(r) &&
-      r.notificationEligible !== false &&
-      !dismissed.has(`${r.id}:${r.alert}`),
-  );
   const notice = notifications[0];
   const rows = useMemo(
     () =>
@@ -202,7 +211,7 @@ export function App() {
     history: ["Join history", "Servers opened during this backend session."],
     activity: [
       "Poll activity",
-      "A live record of each scheduled page request.",
+      "A live record of each poll cycle and its page requests.",
     ],
   };
   return (
@@ -372,20 +381,49 @@ export function App() {
             <Metric
               icon={Activity}
               title="API requests"
-              value={data.polls}
+              value={data.totalRequests ?? data.polls}
               note={`Last result ${date(data.lastAt)}`}
             />
           </section>
           {tab === "servers" && (
             <>
-              <div className="section-heading" data-reveal="visible">
+              <div
+                className="section-heading signal-section-heading"
+                data-reveal="visible"
+              >
                 <h2>
                   <span className="chapter-label">a few things stirring</span>{" "}
                   Signals to watch
                 </h2>
-                <span className="subtle">{alerts.length} signals in view</span>
+                <div className="signal-heading-actions">
+                  <span className="subtle">
+                    {alerts.length} signals · population descending
+                  </span>
+                  <div
+                    className="signal-view-switch"
+                    role="group"
+                    aria-label="Signal view"
+                  >
+                    <button
+                      type="button"
+                      aria-pressed={signalView === "carousel"}
+                      onClick={() => setSignalView("carousel")}
+                    >
+                      <GalleryHorizontal size={15} aria-hidden="true" />{" "}
+                      Carousel
+                    </button>
+                    <button
+                      type="button"
+                      aria-pressed={signalView === "cards"}
+                      onClick={() => setSignalView("cards")}
+                    >
+                      <LayoutGrid size={15} aria-hidden="true" /> Cards
+                    </button>
+                  </div>
+                </div>
               </div>
-              <SignalCarousel
+              <SignalView
+                view={signalView}
                 items={alerts}
                 now={data.now}
                 motionPaused={motionPaused}
@@ -421,6 +459,12 @@ export function App() {
                       now={data.now}
                     />
                     <p className="signal-reason">{r.reasons?.join(" · ")}</p>
+                    <p
+                      className="subtle"
+                      title="Same capacity, starting population within 2 players, similar sample duration. Ranking context, not biome confidence."
+                    >
+                      {peerSummary(r)}
+                    </p>
                     <div className="signal-footer">
                       {r.joined ? (
                         <span
@@ -464,8 +508,8 @@ export function App() {
                 }
               />
               <p className="signal-disclaimer">
-                Population leads, not confirmed rare biomes. Fresh open-slot
-                leads come first; each server is only updated when its page is
+                Population leads, not confirmed rare biomes. Highest player
+                count first; each server is only updated when its page is
                 sampled.
                 {data.pollIntervalMs > 15000 &&
                   " Current polling is too slow to resolve the 10–15 second growth windows; close-together observations are required."}
@@ -700,7 +744,7 @@ export function App() {
                           {j.players ?? "—"}/{j.capacity ?? "—"}
                         </td>
                         <td>
-                          <Badge value={j.alert} />
+                          <Badge value={j.alert} row={j} />
                         </td>
                         <td>{pace(j)}</td>
                         <td>
@@ -724,7 +768,7 @@ export function App() {
             <section className="panel" data-reveal="visible">
               <div className="panel-heading">
                 <h2>Request timeline</h2>
-                <span className="subtle">Latest 100 requests</span>
+                <span className="subtle">Latest 100 poll cycles</span>
               </div>
               <div className="timeline">
                 {data.events.map((e) => (
@@ -734,6 +778,15 @@ export function App() {
                     </span>
                     <div>
                       <strong>{e.page}</strong>
+                      <small>
+                        {e.requests ?? 1} API request(s)
+                        {e.partial
+                          ? ` · partial update: ${e.count ?? 0} servers refreshed`
+                          : ""}
+                        {e.deferredPage
+                          ? ` · page ${e.deferredPage} deferred for quota`
+                          : ""}
+                      </small>
                       <p>
                         {e.error ||
                           `${e.count} servers · ${e.fresh} first seen · ${e.growing} growing · ${e.retention ?? "—"}% retained`}
@@ -752,7 +805,7 @@ export function App() {
                   </div>
                 ))}
                 {!data.events.length && (
-                  <div className="empty-table">No completed requests yet.</div>
+                  <div className="empty-table">No completed polls yet.</div>
                 )}
               </div>
             </section>
@@ -767,7 +820,8 @@ export function App() {
                 {data.budget}/{data.requestLimit ?? 3}
               </span>{" "}
               requests used / rolling minute ·{" "}
-              {(data.pollIntervalMs ?? 20500) / 1000}s polling
+              {(data.pollIntervalMs ?? 20500) / 1000}s polling · up to{" "}
+              {data.pagesPerPoll ?? 1} page(s) per cycle
             </span>
           </footer>
         </div>
@@ -934,7 +988,33 @@ export function App() {
                     value={detail.peak}
                     note={`First seen ${date(detail.firstSeen)}`}
                   />
+                  <Metric
+                    title="Peer-window slope"
+                    value={
+                      detail.peerGrowth?.slopePer10s == null
+                        ? "—"
+                        : detail.peerGrowth.slopePer10s.toFixed(1)
+                    }
+                    note={`net players /10s over ${((detail.peerGrowth?.durationMs ?? 0) / 1000).toFixed(1)}s of actual observations`}
+                  />
+                  <Metric
+                    title="Burst gain retained"
+                    value={
+                      detail.burstGainRetained == null
+                        ? "—"
+                        : `${detail.burstGainRetained}/${detail.burstMemory.gain}`
+                    }
+                    note="net players from the original burst, not biome confidence"
+                  />
                 </div>
+                <p className="detail-note">
+                  {peerSummary(detail)}.{" "}
+                  {detail.peerGrowth?.medianPer10s != null &&
+                    `Peer median: ${detail.peerGrowth.medianPer10s.toFixed(1)} net players /10s. `}
+                  Matched by capacity, starting population (±2), and observation
+                  duration (±3s). Comparison only ranks leads; it never triggers
+                  an alert by itself.
+                </p>
                 <p className="detail-note">
                   {detail.reasons?.join(" · ") || "No growth rule met yet."}{" "}
                   Near-full occupancy (context only):{" "}

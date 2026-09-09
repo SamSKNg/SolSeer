@@ -76,7 +76,7 @@ test("full bursts are visible missed-entry leads, not actionable notifications",
   assert.equal(full.alert, "potential");
   assert.equal(full.filledBurst, true);
   assert.equal(full.notificationEligible, false);
-  assert.equal(signalLabel({ ...r, ...full }), "Full · recent filling");
+  assert.equal(signalLabel({ ...r, ...full }), "Full · recent burst");
   assert.equal(full.signalHoldPollsRemaining, 2);
   const drop = observe(r, 19, 10000);
   assert.equal(drop.alert, "potential");
@@ -98,7 +98,7 @@ test("follow-up confirms retained population, not a biome, and never renews a ho
   const held = observe(r, 15, 20000);
   assert.equal(held.notificationEligible, false);
   assert.equal(held.signalHoldPollsRemaining, 1);
-  assert.equal(observe(r, 15, 25000).alert, "watch");
+  assert.equal(observe(r, 15, 25000).signalState, "holding");
 });
 
 test("dips and missing observations cannot masquerade as successful follow-up", () => {
@@ -121,7 +121,8 @@ test("freshness expires on wall time without consuming hold polls or manufacturi
   assert.equal(stale.notificationEligible, false);
   assert.equal(stale.signalHoldPollsRemaining, 2);
   assert.equal(signalLabel({ ...r, ...stale }), "Stale observation");
-  assert.equal(score(r, 4, 25001).alert, "watch");
+  assert.equal(score(r, 4, 25001).alert, "potential"); // Historical burst only.
+  assert.equal(score(r, 4, 25001).notificationEligible, false);
   assert.equal(r.history.length, 2);
   const full = record(Array(13).fill(20));
   assert.equal(score(full, 31, full.lastSeen + 90000).alert, "watch");
@@ -134,6 +135,120 @@ test("capacity changes and duplicate timestamps cannot produce growth or infinit
   const duplicate = score(record([13, 16], [5000, 5000]));
   assert.equal(duplicate.notificationEligible, false);
   assert.equal(duplicate.growthPer10s, null);
+});
+
+test("a stale return clears old leads and needs fresh growth on a second observation", () => {
+  for (const [gain, expected] of [
+    [2, "potential"],
+    [3, "cluster"],
+  ]) {
+    const r = record([11]);
+    observe(r, 13, 3000);
+    assert.equal(r.signalHold.expiresAtPoll, 4);
+    const returned = observe(r, 15, 23001);
+    assert.equal(returned.alert, "warmup");
+    assert.equal(returned.awaitingFreshSample, true);
+    assert.equal(returned.notificationEligible, false);
+    assert.equal(returned.deltaPoll, null);
+    assert.equal(returned.growth15s, null);
+    assert.equal(returned.signalHoldPollsRemaining, 0);
+    assert.equal(r.signalHold, null);
+    assert.equal(r.growthFloorAt, 23001);
+    assert.equal(signalLabel({ ...r, ...returned }), "Awaiting fresh sample");
+
+    const next = observe(r, 15 + gain, 26001);
+    assert.equal(next.awaitingFreshSample, false);
+    assert.equal(next.alert, expected);
+    assert.equal(next.notificationEligible, true);
+    assert.equal(next.growth15s, gain);
+    assert.equal(next.followUpConfirmed, false);
+    assert.equal(r.signalHold.triggerAt, 26001);
+  }
+});
+
+test("flat recovery cannot validate old growth, and repeated stale gaps restart recovery", () => {
+  const r = record([13]);
+  observe(r, 15, 20001);
+  const flat = observe(r, 15, 23001);
+  assert.equal(flat.alert, "watch");
+  assert.equal(flat.awaitingFreshSample, false);
+  assert.equal(flat.growth15s, 0);
+  assert.equal(flat.notificationEligible, false);
+  const staleAgain = observe(r, 17, 43002);
+  assert.equal(staleAgain.awaitingFreshSample, true);
+  assert.equal(staleAgain.alert, "warmup");
+  assert.equal(staleAgain.notificationEligible, false);
+  const full = observe(r, 20, 63003);
+  assert.equal(full.awaitingFreshSample, true);
+  assert.equal(full.filledBurst, false);
+  assert.equal(full.alert, "warmup");
+});
+
+test("recovery starts only beyond the 20-second boundary and normal first sightings still warm up", () => {
+  const r = record([13]);
+  const first = score(r);
+  assert.equal(first.alert, "warmup");
+  assert.equal(first.awaitingFreshSample, false);
+  const boundary = observe(r, 15, 20000);
+  assert.equal(boundary.awaitingFreshSample, false);
+  assert.equal(boundary.alert, "watch");
+  // This interval still exceeds the unchanged 15-second growth window.
+  assert.equal(boundary.notificationEligible, false);
+  assert.equal(observe(r, 17, 40001).awaitingFreshSample, true);
+});
+
+test("other-page polls, errors and heartbeats cannot supply a stale server's second sample", async () => {
+  const store = new Store();
+  let now = 1000000;
+  const replies = [11, 13, 15, null, "error", 17];
+  const tracker = new Tracker(store, {
+    now: () => now,
+    interval: 3000,
+    requestLimit: 20,
+    fetchFn: async () => {
+      const players = replies.shift();
+      if (players === "error") return new Response("bad", { status: 500 });
+      return new Response(
+        JSON.stringify({
+          data:
+            players === null
+              ? []
+              : [{ id: "job", playing: players, maxPlayers: 20 }],
+        }),
+      );
+    },
+  });
+  const poll = async () => {
+    await tracker.poll();
+    now = tracker.nextAt;
+    return tracker.snapshot().rows[0];
+  };
+  try {
+    await poll();
+    assert.equal((await poll()).alert, "potential");
+    now = 1023001; // Old poll-based hold is still active after the long pause.
+    assert.equal(tracker.snapshot().rows[0].isFresh, false);
+    const returned = await poll();
+    assert.equal(returned.alert, "warmup");
+    assert.equal(returned.awaitingFreshSample, true);
+    for (let i = 0; i < 2; i++) {
+      const missing = await poll();
+      assert.equal(missing.awaitingFreshSample, true);
+      assert.equal(missing.notificationEligible, false);
+      assert.equal(missing.history.length, 3);
+      assert.equal(tracker.snapshot().rows[0].awaitingFreshSample, true);
+    }
+    const second = await poll();
+    assert.equal(second.awaitingFreshSample, false);
+    assert.equal(second.alert, "potential");
+    assert.equal(second.notificationEligible, true);
+    assert.equal(second.growth15s, 2);
+    assert.equal(second.history.length, 4);
+    assert.equal(tracker.polls, 6);
+    assert.equal(store.requests(now).length, 6);
+  } finally {
+    store.close();
+  }
 });
 
 test("ranking puts actionable rapid filling first, then early leads, full and stale leads", () => {

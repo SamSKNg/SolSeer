@@ -100,7 +100,8 @@ test(
       const snapshot = await (await fetch(base + "/api/snapshot")).json();
       assert.equal(snapshot.totalJoins, 1);
       assert.equal(snapshot.pollIntervalMs, 3000);
-      assert.equal(snapshot.requestLimit, 20);
+      assert.equal(snapshot.requestLimit, 40);
+      assert.equal(snapshot.pagesPerPoll, 2);
       assert.equal(snapshot.minimumPlayers, 13);
       assert.ok(
         !JSON.stringify(snapshot).includes("synthetic-http-test-cookie"),
@@ -175,7 +176,7 @@ test(
         (await readFile(join(configDir, ".env"), "utf8")).includes(dummy),
       );
       const afterSave = await (await fetch(base + "/api/snapshot")).json();
-      assert.equal(afterSave.requestLimit, 20);
+      assert.equal(afterSave.requestLimit, 40);
       assert.equal(afterSave.totalJoins, 1);
       assert.ok(!JSON.stringify(afterSave).includes(dummy));
       const preferences = { enabled: true, potential: false, cluster: true };

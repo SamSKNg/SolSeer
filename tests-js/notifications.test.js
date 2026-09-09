@@ -29,6 +29,45 @@ async function fixture(run) {
   }
 }
 
+test("a long held plateau stays visible without repeating or rearming desktop alerts", () =>
+  fixture(async (notifications) => {
+    await notifications.save(enabled);
+    const store = new Store();
+    let now = 1000000,
+      players = 14;
+    const tracker = new Tracker(store, {
+      now: () => now,
+      interval: 3000,
+      requestLimit: 20,
+      fetchFn: async () =>
+        new Response(
+          JSON.stringify({
+            data: [{ id: "job", playing: players, maxPlayers: 20 }],
+          }),
+        ),
+    });
+    const poll = async (count) => {
+      now = tracker.nextAt;
+      players = count;
+      await tracker.poll();
+      notifications.update(tracker.snapshot());
+      return notifications.claim();
+    };
+    try {
+      await poll(14);
+      assert.equal((await poll(16)).length, 1);
+      for (let i = 0; i < 35; i++) {
+        assert.deepEqual(await poll(16), []);
+        assert.equal(tracker.snapshot().rows[0].signalState, "holding");
+      }
+      for (let i = 0; i < 10; i++) assert.deepEqual(await poll(16), []);
+      assert.equal(tracker.snapshot().rows[0].alert, "watch");
+      assert.equal((await poll(18)).length, 1);
+    } finally {
+      store.close();
+    }
+  }));
+
 test("notification preferences persist independently, validate input and default to disabled", () =>
   fixture(async (notifications, folder) => {
     assert.equal(notifications.preferences.enabled, false);

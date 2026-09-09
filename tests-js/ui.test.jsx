@@ -23,6 +23,263 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+test("two-page activity counts API attempts separately from cycles and shows partial updates", () => {
+  vi.stubGlobal("EventSource", FakeEventSource);
+  const { container } = render(<App />);
+  act(() =>
+    feed.onmessage({
+      data: JSON.stringify({
+        now: 1000000,
+        nextAt: 1003000,
+        lastAt: 1000000,
+        rows: [],
+        joins: [],
+        polls: 20,
+        totalRequests: 40,
+        budget: 40,
+        requestLimit: 40,
+        pollIntervalMs: 3000,
+        pagesPerPoll: 2,
+        tracked: 100,
+        totalJoins: 0,
+        events: [
+          {
+            id: 20,
+            at: 1000000,
+            page: "Pages 1 + 2",
+            requests: 2,
+            partial: true,
+            count: 100,
+            duration: 120,
+            error: "Roblox HTTP 429",
+          },
+        ],
+      }),
+    }),
+  );
+  expect(screen.getByText("40/40")).toBeTruthy();
+  expect(
+    screen.getByText(/3s polling.*up to 2 page\(s\) per cycle/),
+  ).toBeTruthy();
+  expect(
+    screen.getByText("API requests").closest(".metric").textContent,
+  ).toContain("40");
+  fireEvent.click(screen.getByRole("button", { name: /Poll activity/ }));
+  expect(screen.getByText("Latest 100 poll cycles")).toBeTruthy();
+  expect(container.querySelectorAll(".timeline .event")).toHaveLength(1);
+  expect(screen.getByText("Pages 1 + 2")).toBeTruthy();
+  expect(
+    screen.getByText(
+      /2 API request\(s\).*partial update: 100 servers refreshed/,
+    ),
+  ).toBeTruthy();
+  expect(screen.getByText("Roblox HTTP 429")).toBeTruthy();
+});
+
+test("signal view switch shows all ranked cards, preserves identity on updates, and keeps per-server actions", async () => {
+  vi.stubGlobal("EventSource", FakeEventSource);
+  const writeText = vi.fn().mockResolvedValue(undefined);
+  Object.defineProperty(navigator, "clipboard", {
+    configurable: true,
+    value: { writeText },
+  });
+  render(<App />);
+  const rows = Array.from({ length: 5 }, (_, i) =>
+    sampleRow(i, {
+      alert: "potential",
+      players: 18 - i,
+      growthPer10s: 5 - i,
+      joined: i === 1 ? { count: 1, at: 1000000 } : null,
+    }),
+  );
+  sendRows(rows);
+  const switcher = screen.getByRole("group", { name: "Signal view" });
+  expect(
+    within(switcher)
+      .getByRole("button", { name: "Carousel" })
+      .getAttribute("aria-pressed"),
+  ).toBe("true");
+  expect(
+    within(
+      screen.getByRole("region", { name: "Cluster candidates" }),
+    ).getAllByRole("article"),
+  ).toHaveLength(1);
+  fireEvent.click(within(switcher).getByRole("button", { name: "Cards" }));
+  const list = screen.getByRole("list", {
+    name: "Signals sorted by population",
+  });
+  const cards = () => within(list).getAllByRole("article");
+  expect(cards()).toHaveLength(5);
+  expect(screen.queryByRole("button", { name: "Next signal" })).toBeNull();
+  const firstCard = cards()[0];
+  expect(
+    within(firstCard)
+      .getByRole("button", { name: "Join server" })
+      .closest("form")
+      .getAttribute("action"),
+  ).toBe(`/api/join/${rows[0].id}`);
+  expect(
+    within(cards()[1])
+      .getByRole("button", { name: "Rejoin" })
+      .closest("form")
+      .getAttribute("action"),
+  ).toBe(`/api/join/${rows[1].id}`);
+  await act(async () =>
+    fireEvent.click(
+      within(cards()[1]).getByRole("button", { name: "Copy server link" }),
+    ),
+  );
+  expect(writeText).toHaveBeenCalledWith(
+    `roblox://placeId=15532962292&gameInstanceId=${rows[1].id}`,
+  );
+  const focusedJoin = within(firstCard).getByRole("button", {
+    name: "Join server",
+  });
+  focusedJoin.focus();
+  sendRows(
+    [{ ...rows[4], players: 19, growthPer10s: 20 }, ...rows.slice(0, 4)],
+    2,
+  );
+  expect(cards()[1]).toBe(firstCard);
+  expect(document.activeElement).toBe(focusedJoin);
+  expect(
+    within(cards()[0])
+      .getByRole("button", { name: "Join server" })
+      .closest("form")
+      .getAttribute("action"),
+  ).toBe(`/api/join/${rows[4].id}`);
+  fireEvent.click(within(cards()[0]).getByRole("button", { name: /^Server / }));
+  expect(within(screen.getByRole("dialog")).getByText(rows[4].id)).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Close server details" }));
+  fireEvent.click(screen.getByRole("button", { name: /Join history/ }));
+  fireEvent.click(screen.getByRole("button", { name: /Server radar/ }));
+  expect(
+    screen.getByRole("list", { name: "Signals sorted by population" }),
+  ).toBeTruthy();
+  fireEvent.click(
+    screen.getByRole("button", { name: "Carousel", exact: true }),
+  );
+  expect(
+    screen.queryByRole("list", { name: "Signals sorted by population" }),
+  ).toBeNull();
+  expect(screen.getByRole("button", { name: "Next signal" })).toBeTruthy();
+});
+
+test("card index handles empty, new and expired signals without changing the selected view", () => {
+  vi.stubGlobal("EventSource", FakeEventSource);
+  render(<App />);
+  fireEvent.click(screen.getByRole("button", { name: "Cards", exact: true }));
+  const region = screen.getByRole("region", { name: "Cluster candidates" });
+  expect(
+    within(region).getByText("Connecting to the server list"),
+  ).toBeTruthy();
+  sendRows([sampleRow(1, { alert: "potential" })]);
+  expect(within(region).getAllByRole("article")).toHaveLength(1);
+  sendRows([], 2);
+  expect(within(region).queryByRole("article")).toBeNull();
+  expect(
+    within(region).getByText("Listening for a population jump"),
+  ).toBeTruthy();
+  expect(
+    screen
+      .getByRole("button", { name: "Cards", exact: true })
+      .getAttribute("aria-pressed"),
+  ).toBe("true");
+});
+
+test("signal cards sort descending by population, break ties by signal priority, and do not reorder notices", () => {
+  vi.stubGlobal("EventSource", FakeEventSource);
+  render(<App />);
+  const full = sampleRow(1, {
+    players: 20,
+    alert: "potential",
+    signalState: "full",
+    notificationEligible: false,
+  });
+  const early = sampleRow(2, {
+    players: 17,
+    alert: "potential",
+    signalState: "growing",
+    notificationEligible: true,
+  });
+  const held = sampleRow(3, {
+    players: 17,
+    alert: "potential",
+    signalState: "holding",
+    notificationEligible: false,
+  });
+  const rapid = sampleRow(4, {
+    players: 13,
+    alert: "cluster",
+    signalState: "growing",
+    notificationEligible: true,
+  });
+  sendRows([rapid, held, early, full]);
+  fireEvent.click(screen.getByRole("button", { name: "Cards", exact: true }));
+  const order = () =>
+    within(screen.getByRole("list", { name: "Signals sorted by population" }))
+      .getAllByRole("article")
+      .map((card) => card.querySelector("form").getAttribute("action"));
+  expect(order()).toEqual(
+    [full, early, held, rapid].map((r) => `/api/join/${r.id}`),
+  );
+  const notice = screen.getByLabelText("Strong signal notification");
+  expect(notice.querySelector("form").getAttribute("action")).toBe(
+    `/api/join/${rapid.id}`,
+  );
+  sendRows([full, early, held, { ...rapid, players: 18 }], 2);
+  expect(order()).toEqual(
+    [full, rapid, early, held].map((r) => `/api/join/${r.id}`),
+  );
+});
+
+test("holding bursts stay in the carousel with peer context but never appear as actionable notices", () => {
+  vi.stubGlobal("EventSource", FakeEventSource);
+  render(<App />);
+  const held = sampleRow(1, {
+    id: "held-burst",
+    alert: "potential",
+    signalState: "holding",
+    notificationEligible: false,
+    players: 17,
+    deltaPoll: 0,
+    burstMemory: { gain: 3 },
+    burstGainRetained: 3,
+    peerGrowth: {
+      percentile: 80,
+      count: 25,
+      slopePer10s: 1,
+      durationMs: 12000,
+      medianPer10s: 0,
+    },
+  });
+  sendRows([held]);
+  const candidates = screen.getByRole("region", { name: "Cluster candidates" });
+  expect(within(candidates).getByText("Holding population")).toBeTruthy();
+  expect(
+    within(candidates).getByText(/Growing faster than 80% of 25/),
+  ).toBeTruthy();
+  expect(screen.queryByLabelText("Early lead notification")).toBeNull();
+  expect(screen.queryByLabelText("Strong signal notification")).toBeNull();
+  fireEvent.click(
+    within(candidates).getByRole("button", { name: "Server held-bur" }),
+  );
+  const dialog = screen.getByRole("dialog");
+  expect(within(dialog).getByText("Peer-window slope")).toBeTruthy();
+  expect(within(dialog).getByText("Burst gain retained")).toBeTruthy();
+  expect(within(dialog).getByText("3/3")).toBeTruthy();
+  sendRows(
+    [{ ...held, peerGrowth: { percentile: null, count: 4, minimumPeers: 20 } }],
+    2,
+  );
+  expect(
+    within(dialog).getByText(/Insufficient comparison data \(4\/20 peers\)/),
+  ).toBeTruthy();
+  sendRows([{ ...held, players: 20, signalState: "full" }], 3);
+  expect(within(dialog).getByText("Full · recent burst")).toBeTruthy();
+  expect(screen.queryByLabelText("Early lead notification")).toBeNull();
+});
+
 test("site branding is solseer text without a logo", () => {
   vi.stubGlobal("EventSource", FakeEventSource);
   render(<App />);
@@ -293,6 +550,7 @@ test("carousel Join follows the displayed server after navigation and live reord
   const first = sampleRow(1, {
     id: "11111111-1111-4111-8111-111111111111",
     alert: "potential",
+    players: 16,
     growthPer10s: 4,
   });
   const second = sampleRow(2, {
@@ -308,7 +566,7 @@ test("carousel Join follows the displayed server after navigation and live reord
   expect(joinForm().getAttribute("action")).toBe(`/api/join/${first.id}`);
   fireEvent.click(screen.getByRole("button", { name: "Next signal" }));
   expect(joinForm().getAttribute("action")).toBe(`/api/join/${second.id}`);
-  sendRows([{ ...second, growthPer10s: 10 }, first], 2);
+  sendRows([{ ...second, players: 18, growthPer10s: 10 }, first], 2);
   expect(joinForm().getAttribute("action")).toBe(`/api/join/${second.id}`);
   fireEvent.click(screen.getByRole("button", { name: "Next signal" }));
   expect(joinForm().getAttribute("action")).toBe(`/api/join/${first.id}`);
@@ -454,7 +712,7 @@ test("an early lead surfaces immediately outside the carousel, and disappears fr
   expect(screen.getByText("Stale observation")).toBeTruthy();
 });
 
-test("fresh open-slot leads rank ahead of full and stale cards, while rapid filling upgrades the notice", () => {
+test("population-first carousel leaves fresh actionable notification priority unchanged", () => {
   vi.stubGlobal("EventSource", FakeEventSource);
   render(<App />);
   const early = sampleRow(1, {
@@ -482,7 +740,7 @@ test("fresh open-slot leads rank ahead of full and stale cards, while rapid fill
       .getByRole("article")
       .querySelector("form")
       .getAttribute("action"),
-  ).toBe("/api/join/server-001");
+  ).toBe("/api/join/server-002");
   fireEvent.click(screen.getByRole("button", { name: "Dismiss early lead" }));
   sendRows([full, stale, early], 2);
   expect(screen.queryByLabelText("Early lead notification")).toBeNull();

@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { Store } from "../src/server/store.js";
 import { runPollingProbe, quotaHeaders } from "../src/server/poll-probe.js";
 
-test("probe waits for previous traffic, sends 20 three-second requests, and preserves normal quota", async () => {
+test("single-page probe waits for previous traffic, sends 40 three-second requests, and preserves quota", async () => {
   const store = new Store();
   let now = 1000000;
   store.reserve(now);
@@ -22,12 +22,12 @@ test("probe waits for previous traffic, sends 20 three-second requests, and pres
         return new Response('{"data":[]}');
       },
     });
-    assert.equal(results.length, 20);
+    assert.equal(results.length, 40);
     assert.equal(starts[0], 1060250);
     assert.ok(starts.slice(1).every((at, i) => at - starts[i] === 3000));
     assert.equal(store.requests(now).length, 20);
     // The normal app must wait for all but its last two requests to expire.
-    assert.equal(store.availableIn(now), starts[17] + 60250 - now);
+    assert.equal(store.availableIn(now), starts[37] + 60250 - now);
     assert.ok(store.reserve(now) > 0);
   } finally {
     store.close();

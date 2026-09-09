@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, Pause, Play } from "lucide-react";
 import { Sparkline } from "./Sparkline.jsx";
+import { signalLabel } from "../shared/signals.js";
 import "./carousel.css";
 
 export function SignalCarousel({
@@ -224,15 +225,7 @@ function SignalPreview({ item, side, onClick, now }) {
         {side === "next" ? <ArrowRight size={13} /> : null}
       </span>
       <span key={item.id} className="preview-content" aria-hidden="true">
-        <span className="preview-alert">
-          {item.isFresh === false
-            ? "stale lead"
-            : item.players >= item.capacity
-              ? "full · recent lead"
-              : item.alert === "cluster"
-                ? "rapid filling"
-                : "early / recent lead"}
-        </span>
+        <span className="preview-alert">{signalLabel(item)}</span>
         <strong className="preview-id">{item.id.slice(0, 8)}</strong>
         <span className="preview-population">
           {item.players ?? "—"}

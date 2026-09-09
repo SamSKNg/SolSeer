@@ -22,9 +22,21 @@ export function compareSignals(a, b) {
           : 2;
   const tier = (row) =>
     ({ cluster: 3, potential: 2, watch: 1, warmup: 0 })[row.alert] ?? 0;
+  const active = (row) =>
+    row.signalState
+      ? Number(row.signalState === "growing")
+      : Number(row.notificationEligible !== false);
+  // Use a fixed neutral ordering key for missing data (not a displayed score).
+  // A pairwise "skip peers if either is missing" comparator is non-transitive.
+  const peerDifference =
+    (b.peerGrowth?.percentile ?? 50) - (a.peerGrowth?.percentile ?? 50);
   return (
     bucket(b) - bucket(a) ||
+    active(b) - active(a) ||
+    Number(a.signalState === "declining") -
+      Number(b.signalState === "declining") ||
     tier(b) - tier(a) ||
+    peerDifference ||
     Number(Boolean(b.followUpConfirmed)) -
       Number(Boolean(a.followUpConfirmed)) ||
     (b.growthPer10s ?? 0) - (a.growthPer10s ?? 0) ||
@@ -35,6 +47,10 @@ export function compareSignals(a, b) {
 
 export function signalLabel(row) {
   if (row.isFresh === false) return "Stale observation";
+  if (row.awaitingFreshSample) return "Awaiting fresh sample";
+  if (row.signalState === "declining") return "Declining · recent burst";
+  if (row.signalState === "full") return "Full · recent burst";
+  if (row.signalState === "holding") return "Holding population";
   if (isCandidate(row) && !hasOpenSlot(row)) return "Full · recent filling";
   if (isCandidate(row) && row.notificationEligible === false)
     return "Recent lead";
