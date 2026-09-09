@@ -8,6 +8,7 @@ import { Tracker } from "./tracker.js";
 import { LocalSettings } from "./local-settings.js";
 import { EventStreams } from "./event-streams.js";
 import { Notifications } from "./notifications.js";
+import { pollingFor } from "./polling-config.js";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const dev = process.argv.includes("--dev");
@@ -24,8 +25,7 @@ const robloxFetch = settings.request;
 const settingsToken = randomBytes(32).toString("hex");
 const tracker = new Tracker(store, {
   fetchFn: robloxFetch,
-  interval: robloxFetch.hasCookie ? 5000 : 20500,
-  requestLimit: robloxFetch.hasCookie ? 12 : 3,
+  ...pollingFor(robloxFetch.hasCookie),
 });
 const notifications = new Notifications(settings.directory);
 const snapshot = () => {

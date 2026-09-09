@@ -1,5 +1,6 @@
 import { score, THRESHOLDS, updateSignalHold } from "./scorer.js";
 import { compareSignals } from "../shared/signals.js";
+import { ANONYMOUS_POLLING, pollingFor } from "./polling-config.js";
 
 import { PLACE_ID, joinUrl } from "../shared/roblox-links.js";
 export { PLACE_ID, joinUrl } from "../shared/roblox-links.js";
@@ -10,8 +11,8 @@ export class Tracker {
     {
       fetchFn = fetch,
       now = Date.now,
-      interval = 20500,
-      requestLimit = 3,
+      interval = ANONYMOUS_POLLING.interval,
+      requestLimit = ANONYMOUS_POLLING.requestLimit,
     } = {},
   ) {
     Object.assign(this, { store, fetchFn, now, interval, requestLimit });
@@ -61,8 +62,7 @@ export class Tracker {
       return;
     }
     this.fetchFn = fetchFn;
-    this.interval = fetchFn.hasCookie ? 5000 : 20500;
-    this.requestLimit = fetchFn.hasCookie ? 12 : 3;
+    Object.assign(this, pollingFor(fetchFn.hasCookie));
     const delay = Math.max(
       this.interval,
       this.nextAt - this.now(),
@@ -237,8 +237,7 @@ export class Tracker {
       }
       // Slow down if authentication stops working; never hammer a rejected cookie.
       if (/^Roblox HTTP (401|403)$/.test(error.message)) {
-        this.interval = 20500;
-        this.requestLimit = 3;
+        Object.assign(this, ANONYMOUS_POLLING);
         delay = Math.max(delay, 60000);
       }
       this.error =
@@ -259,8 +258,7 @@ export class Tracker {
       if (this.pendingFetch) {
         this.fetchFn = this.pendingFetch;
         this.pendingFetch = null;
-        this.interval = this.fetchFn.hasCookie ? 5000 : 20500;
-        this.requestLimit = this.fetchFn.hasCookie ? 12 : 3;
+        Object.assign(this, pollingFor(this.fetchFn.hasCookie));
         delay = Math.max(delay, this.interval);
       }
       event.duration = this.now() - start;

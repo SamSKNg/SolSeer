@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { score } from "../src/server/scorer.js";
 import { Tracker } from "../src/server/tracker.js";
 import { Store } from "../src/server/store.js";
+import { AUTHENTICATED_POLLING } from "../src/server/polling-config.js";
 
 function record(counts, step = 5000) {
   const history = counts.map((players, i) => ({
@@ -125,13 +126,12 @@ test("UI excludes below-13 servers but tracking retains already-fetched baseline
   }
 });
 
-test("authenticated schedule is five seconds start-to-start with a rolling twelve-attempt cap", async () => {
+test("authenticated schedule is three seconds start-to-start with a rolling twenty-attempt cap", async () => {
   const store = new Store();
   let now = 1000000;
   const starts = [];
   const tracker = new Tracker(store, {
-    interval: 5000,
-    requestLimit: 12,
+    ...AUTHENTICATED_POLLING,
     now: () => now,
     fetchFn: async () => {
       starts.push(now);
@@ -142,19 +142,19 @@ test("authenticated schedule is five seconds start-to-start with a rolling twelv
     },
   });
   try {
-    for (let i = 0; i < 12; i++) {
+    for (let i = 0; i < 20; i++) {
       await tracker.poll();
-      if (i < 11) now = tracker.nextAt;
+      if (i < 19) now = tracker.nextAt;
     }
-    assert.ok(starts.slice(1).every((start, i) => start - starts[i] === 5000));
+    assert.ok(starts.slice(1).every((start, i) => start - starts[i] === 3000));
     assert.equal(tracker.nextAt, 1060250);
-    assert.equal(tracker.snapshot().requestLimit, 12);
-    assert.equal(tracker.snapshot().pollIntervalMs, 5000);
+    assert.equal(tracker.snapshot().requestLimit, 20);
+    assert.equal(tracker.snapshot().pollIntervalMs, 3000);
     await tracker.poll();
-    assert.equal(starts.length, 12);
+    assert.equal(starts.length, 20);
     now = tracker.nextAt;
     await tracker.poll();
-    assert.equal(starts.length, 13);
+    assert.equal(starts.length, 21);
   } finally {
     store.close();
   }

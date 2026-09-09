@@ -17,7 +17,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-test("copying shares the same public Roblox URL as joining, without any network request or POST", async () => {
+test("copying shares the same direct Roblox app URI as joining without a network request or POST", async () => {
   vi.useFakeTimers();
   const writeText = vi.fn().mockResolvedValue(undefined);
   const fetch = vi.fn();
@@ -30,11 +30,12 @@ test("copying shares the same public Roblox URL as joining, without any network 
   const expected = joinUrl("server/a?b&c");
   expect(expected).toBe(trackerJoinUrl("server/a?b&c"));
   expect(writeText).toHaveBeenCalledWith(expected);
-  const url = new URL(expected);
-  expect(url.origin).toBe("https://www.roblox.com");
-  expect(url.searchParams.get("placeId")).toBe(String(PLACE_ID));
-  expect(url.searchParams.get("gameInstanceId")).toBe("server/a?b&c");
-  expect([...url.searchParams.keys()]).toEqual(["placeId", "gameInstanceId"]);
+  expect(expected.startsWith("roblox://placeId=")).toBe(true);
+  const params = new URLSearchParams(expected.slice("roblox://".length));
+  expect(params.get("placeId")).toBe(String(PLACE_ID));
+  expect(params.get("gameInstanceId")).toBe("server/a?b&c");
+  expect([...params.keys()]).toEqual(["placeId", "gameInstanceId"]);
+  expect(expected).not.toContain("games/start");
   expect(screen.getByText("Copied")).toBeTruthy();
   expect(screen.getByRole("status").textContent).toBe("Server link copied");
   expect(fetch).not.toHaveBeenCalled();

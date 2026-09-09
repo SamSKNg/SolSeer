@@ -1,4 +1,6 @@
 // One store per backend session. No filesystem, SQLite, or browser storage.
+import { AUTHENTICATED_POLLING } from "./polling-config.js";
+
 export class Store {
   #history = [];
   #joined = new Map();
@@ -46,7 +48,11 @@ export class Store {
     return wait;
   }
   availableIn(now, limit = 3) {
-    if (!Number.isInteger(limit) || limit < 1 || limit > 12)
+    if (
+      !Number.isInteger(limit) ||
+      limit < 1 ||
+      limit > AUTHENTICATED_POLLING.requestLimit
+    )
       throw new Error("Invalid request budget");
     const sent = this.requests(now);
     return Math.max(

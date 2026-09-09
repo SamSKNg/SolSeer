@@ -1,5 +1,6 @@
 import { setTimeout as sleep } from "node:timers/promises";
 import { PLACE_ID } from "./tracker.js";
+import { AUTHENTICATED_POLLING } from "./polling-config.js";
 
 // Report only numeric quota values, never arbitrary response headers or bodies.
 export function quotaHeaders(headers) {
@@ -30,7 +31,7 @@ export async function runPollingProbe({
   wait = sleep,
   report = console.log,
 }) {
-  // Let previous traffic expire so this is an isolated five-second trial.
+  // Let previous traffic expire so this is an isolated three-second trial.
   let initialWait;
   while ((initialWait = store.availableIn(now(), 1)) > 0) {
     report(
@@ -39,10 +40,11 @@ export async function runPollingProbe({
     await wait(initialWait);
   }
   const results = [];
+  const { interval, requestLimit } = AUTHENTICATED_POLLING;
   let nextAt = now();
-  for (let i = 0; i < 12; i++) {
+  for (let i = 0; i < requestLimit; i++) {
     if (nextAt > now()) await wait(nextAt - now());
-    const quotaWait = store.reserve(now(), 12);
+    const quotaWait = store.reserve(now(), requestLimit);
     if (quotaWait) {
       report(
         "Stopped: the shared request budget or cooldown requires waiting.",
@@ -50,7 +52,7 @@ export async function runPollingProbe({
       break;
     }
     const started = now();
-    nextAt = started + 5000;
+    nextAt = started + interval;
     let response, payload;
     try {
       response = await request(
@@ -98,7 +100,7 @@ export async function runPollingProbe({
     }
   }
   report(
-    `Trial finished: ${results.filter((r) => r.status === 200 && r.servers !== null).length}/12 successful responses. This is an observation, not a guaranteed ongoing rate limit.`,
+    `Trial finished: ${results.filter((r) => r.status === 200 && r.servers !== null).length}/${requestLimit} successful responses. This is an observation, not a guaranteed ongoing rate limit.`,
   );
   return results;
 }

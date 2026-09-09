@@ -287,6 +287,33 @@ test("signal and detail share buttons copy a server link without marking it join
   ).toBe("/api/join/server-001");
 });
 
+test("carousel Join follows the displayed server after navigation and live reordering", () => {
+  vi.stubGlobal("EventSource", FakeEventSource);
+  render(<App />);
+  const first = sampleRow(1, {
+    id: "11111111-1111-4111-8111-111111111111",
+    alert: "potential",
+    growthPer10s: 4,
+  });
+  const second = sampleRow(2, {
+    id: "22222222-2222-4222-8222-222222222222",
+    alert: "potential",
+    growthPer10s: 2,
+  });
+  sendRows([first, second]);
+  const joinForm = () =>
+    within(screen.getByRole("region", { name: "Cluster candidates" }))
+      .getByRole("button", { name: "Join server" })
+      .closest("form");
+  expect(joinForm().getAttribute("action")).toBe(`/api/join/${first.id}`);
+  fireEvent.click(screen.getByRole("button", { name: "Next signal" }));
+  expect(joinForm().getAttribute("action")).toBe(`/api/join/${second.id}`);
+  sendRows([{ ...second, growthPer10s: 10 }, first], 2);
+  expect(joinForm().getAttribute("action")).toBe(`/api/join/${second.id}`);
+  fireEvent.click(screen.getByRole("button", { name: "Next signal" }));
+  expect(joinForm().getAttribute("action")).toBe(`/api/join/${first.id}`);
+});
+
 test("server window is collapsed initially, caps at 20 or 10, and stays population-sorted on every update", () => {
   vi.stubGlobal("EventSource", FakeEventSource);
   render(<App />);

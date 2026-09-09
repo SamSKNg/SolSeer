@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import { Store } from "../src/server/store.js";
 import { configuredRobloxFetch } from "../src/server/roblox-fetch.js";
 import { runPollingProbe } from "../src/server/poll-probe.js";
+import { AUTHENTICATED_POLLING } from "../src/server/polling-config.js";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const port = Number(process.env.PORT || 3000);
@@ -13,7 +14,7 @@ const guard = http.createServer((_req, res) =>
   res
     .writeHead(503)
     .end(
-      "Five-second polling test in progress. Restart the app after the test finishes.",
+      "Three-second polling test in progress. Restart the app after the test finishes.",
     ),
 );
 let store;
@@ -30,11 +31,11 @@ try {
   );
   store = new Store();
   console.log(
-    "Bounded authenticated trial: up to 12 requests, minimum 5s between starts. Normal app settings are unchanged.",
+    `Bounded authenticated trial: up to ${AUTHENTICATED_POLLING.requestLimit} requests, minimum ${AUTHENTICATED_POLLING.interval / 1000}s between starts. Normal app settings are unchanged.`,
   );
   const results = await runPollingProbe({ store, request });
   if (
-    results.length !== 12 ||
+    results.length !== AUTHENTICATED_POLLING.requestLimit ||
     results.some((result) => result.status !== 200 || result.servers === null)
   )
     process.exitCode = 1;

@@ -41,7 +41,7 @@ function CopyLink({ id }) {
         onClick={copy}
         disabled={status === "copying"}
         aria-label="Copy server link"
-        title="Copy Roblox join URL for sharing"
+        title="Copy direct Roblox app link. Requires Roblox installed; some chats won't make this link clickable."
       >
         {status === "copied" ? (
           <Check size={14} aria-hidden="true" />

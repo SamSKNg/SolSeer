@@ -22,6 +22,14 @@ You get:
 
 It doesn't read the biome inside a server, inject anything into Roblox, automatically join for you, or confirm that a join click got you into the game. The only detection input is sampled public population data. A friend group joining together can look like a rare-biome rush. False positives are part of the tradeoff here.
 
+### joining a server
+
+Join and Rejoin record your click locally, then hand off straight to the installed Roblox app using `roblox://placeId=...&gameInstanceId=...`. This skips the website join page, which has a [reported problem ignoring the selected server ID](https://devforum.roblox.com/t/deep-link-ignores-gameinstanceid-argument/3815549). Roblox documents the [direct-to-app format here](https://create.roblox.com/docs/production/promotion/deeplinks).
+
+You need Roblox installed and signed in. Your browser may ask **Open Roblox?**; allow it if you intended to join. The cookie in solseer's Settings is for polling, not for signing the Roblox client into an account. This doesn't bypass full servers or access restrictions, and solseer can't verify which server the client ultimately joins.
+
+**Copy server link** copies that same direct-app link. Some chat apps won't make `roblox://` links clickable; recipients can paste the full link into their browser's address bar. There is no automatic fallback to normal matchmaking. If the app doesn't open, check that Roblox is installed and that your browser hasn't blocked the launch prompt.
+
 ## the heuristics, no mystery sauce
 
 These are hand-written rules, not a trained model. The thresholds are starting points, not numbers backed by a labeled biome dataset.
@@ -52,9 +60,9 @@ There is **no biome confidence percentage or weighted mystery score**. `Pace /10
 
 The rules live in [scorer.js](src/server/scorer.js); the shared ordering lives in [signals.js](src/shared/signals.js).
 
-## five-second polling does not mean every server, every five seconds
+## three-second polling does not mean every server, every three seconds
 
-With a cookie configured, solseer targets **one request every 5 seconds**, capped at **12 attempts per rolling minute**. Without one, it's **20.5 seconds / 3 attempts per minute**. The anonymous cadence can't resolve the 10–15 second growth windows; the UI warns about this rather than pretending it can.
+With a cookie configured, solseer targets **one request every 3 seconds**, capped at **20 attempts per rolling minute**. Without one, it's **20.5 seconds / 3 attempts per minute**. The anonymous cadence can't resolve the 10–15 second growth windows; the UI warns about this rather than pretending it can. The heuristic windows are unchanged; the two-poll card hold is now roughly six seconds at the target cadence.
 
 Each request fetches at most 100 servers. The pattern is:
 

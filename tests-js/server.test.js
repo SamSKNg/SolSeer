@@ -93,11 +93,14 @@ test(
         redirect: "manual",
       });
       assert.equal(joined.status, 303);
-      assert.match(joined.headers.get("location"), /gameInstanceId=test-job/);
+      assert.equal(
+        joined.headers.get("location"),
+        "roblox://placeId=15532962292&gameInstanceId=test-job",
+      );
       const snapshot = await (await fetch(base + "/api/snapshot")).json();
       assert.equal(snapshot.totalJoins, 1);
-      assert.equal(snapshot.pollIntervalMs, 5000);
-      assert.equal(snapshot.requestLimit, 12);
+      assert.equal(snapshot.pollIntervalMs, 3000);
+      assert.equal(snapshot.requestLimit, 20);
       assert.equal(snapshot.minimumPlayers, 13);
       assert.ok(
         !JSON.stringify(snapshot).includes("synthetic-http-test-cookie"),
@@ -172,7 +175,7 @@ test(
         (await readFile(join(configDir, ".env"), "utf8")).includes(dummy),
       );
       const afterSave = await (await fetch(base + "/api/snapshot")).json();
-      assert.equal(afterSave.requestLimit, 12);
+      assert.equal(afterSave.requestLimit, 20);
       assert.equal(afterSave.totalJoins, 1);
       assert.ok(!JSON.stringify(afterSave).includes(dummy));
       const preferences = { enabled: true, potential: false, cluster: true };
@@ -286,7 +289,7 @@ test(
         if (expected === 303) {
           assert.equal(
             result.headers.get("location"),
-            "https://www.roblox.com/games/start?placeId=15532962292&gameInstanceId=form-test-job",
+            "roblox://placeId=15532962292&gameInstanceId=form-test-job",
           );
         } else assert.equal(result.headers.get("location"), null);
       }
@@ -313,6 +316,39 @@ test(
         403,
       );
       assert.ok(!logs.includes("Unable to complete local HTTP request"));
+      // Switching servers must never reuse the previous Job ID in the redirect.
+      const jobs = [
+        "11111111-1111-4111-8111-111111111111",
+        "22222222-2222-4222-8222-222222222222",
+      ];
+      for (const id of [jobs[0], jobs[1], jobs[0]]) {
+        const result = await fetch(`${base}/api/join/${id}`, {
+          method: "POST",
+          redirect: "manual",
+          headers: {
+            ...formHeaders,
+            Origin: base,
+            "Sec-Fetch-Site": "same-origin",
+          },
+        });
+        assert.equal(result.status, 303);
+        const destination = result.headers.get("location");
+        assert.equal(
+          destination,
+          `roblox://placeId=15532962292&gameInstanceId=${id}`,
+        );
+        const params = new URLSearchParams(
+          destination.slice("roblox://".length),
+        );
+        assert.equal(params.get("gameInstanceId"), id);
+        assert.equal(params.get("placeId"), "15532962292");
+        assert.equal(result.headers.get("cache-control"), "no-store");
+      }
+      const switched = await (await fetch(base + "/api/snapshot")).json();
+      assert.deepEqual(
+        switched.joins.slice(0, 3).map((entry) => entry.jobId),
+        [jobs[0], jobs[1], jobs[0]],
+      );
     } finally {
       child.kill();
       if (child.exitCode === null)
