@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.streamlit/secrets.toml
+.data/
+node_modules/
+dist/
+*.log
+.env
+.env.*
+!.env.example
+release/
+# Local notification preferences if a custom config directory is inside the repo.
+notifications.json

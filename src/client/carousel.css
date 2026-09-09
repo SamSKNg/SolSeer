@@ -1,0 +1,310 @@
+.gallery .signal-carousel {
+  --carousel-stage-height: 360px;
+  --carousel-controls-height: 84px;
+  display: grid;
+  grid-template-rows: var(--carousel-stage-height) var(
+      --carousel-controls-height
+    );
+  gap: 20px;
+  margin-inline: 3%;
+  min-width: 0;
+}
+.carousel-viewport {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  perspective: 1100px;
+  padding: 6px;
+  margin: 0;
+}
+.carousel-slide {
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  padding-inline: 4px;
+  width: min(100%, 850px);
+  margin-inline: auto;
+  transform-origin: 50% 50%;
+  min-width: 0;
+  position: relative;
+  z-index: 1;
+}
+.carousel-empty {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+}
+.gallery .carousel-empty .empty-signal {
+  width: min(100%, 850px);
+  margin: 0;
+}
+.carousel-viewport.has-previews {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2.5fr) minmax(0, 1fr);
+  align-items: center;
+  gap: clamp(12px, 2.8vw, 48px);
+}
+.carousel-preview {
+  min-width: 0;
+  width: 100%;
+  min-height: 230px;
+  border: 0;
+  border-top: 1px solid #ffffff30;
+  padding: 18px 16px;
+  background: linear-gradient(150deg, #ffffff05, transparent 70%);
+  color: #c3bdad;
+  text-align: left;
+  opacity: 0.65;
+  transform: scale(0.88) rotateY(13deg);
+  transform-origin: right center;
+}
+.carousel-preview.preview-next {
+  transform: scale(0.88) rotateY(-13deg);
+  transform-origin: left center;
+}
+.carousel-preview:hover,
+.carousel-preview:focus-visible {
+  opacity: 1;
+  border-top-color: #ddd5c3;
+}
+.preview-direction {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  font:
+    italic 12px Georgia,
+    serif;
+  color: #c5bfaf;
+}
+.preview-content {
+  display: grid;
+  gap: 16px;
+  margin-top: 25px;
+  pointer-events: none;
+}
+.preview-alert {
+  font:
+    italic 12px Georgia,
+    serif;
+}
+.preview-id {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font:
+    22px Georgia,
+    serif;
+}
+.preview-population {
+  font:
+    29px Georgia,
+    serif;
+}
+.preview-population small {
+  font-size: 12px;
+  margin-left: 3px;
+}
+.gallery .carousel-preview .sparkline {
+  width: 100%;
+  height: 35px;
+  color: #c5bfaf;
+}
+.preview-invitation {
+  font:
+    italic 11px Georgia,
+    serif;
+  color: #a8a293;
+}
+.gallery .carousel-slide .signal-card {
+  margin: 0;
+  min-height: 290px;
+  padding-inline: clamp(0px, 2vw, 30px);
+}
+.gallery .carousel-slide .signal-reason {
+  min-height: 34px;
+}
+.gallery .carousel-slide .sparkline {
+  height: 60px;
+}
+.carousel-controls {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  max-width: 850px;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  margin: 0 auto;
+  border-top: 1px solid #ffffff17;
+  padding-top: 12px;
+}
+.carousel-position {
+  font:
+    24px Georgia,
+    serif;
+  color: #dfdacb;
+  white-space: nowrap;
+}
+.carousel-position > span {
+  font-size: 13px;
+  color: #a9a292;
+}
+.carousel-status {
+  font:
+    italic 12px Georgia,
+    serif;
+  color: #a9a292;
+}
+.carousel-buttons {
+  margin-left: auto;
+  display: flex;
+  gap: 6px;
+}
+.carousel-buttons button {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  color: #dfdacb;
+  border: 0;
+  background: none;
+}
+.carousel-buttons button:hover:not(:disabled) {
+  background: #ffffff0b;
+}
+.carousel-buttons button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .carousel-viewport {
+    --preview-shift: 18px;
+  }
+  .carousel-viewport[data-direction="previous"] {
+    --preview-shift: -18px;
+  }
+  .carousel-preview .preview-content {
+    animation: preview-shift 0.8s ease-out both;
+  }
+  @keyframes preview-shift {
+    from {
+      opacity: 0.35;
+      transform: translateX(var(--preview-shift));
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0);
+    }
+  }
+  .carousel-slide {
+    animation: signal-swipe-in 1.35s cubic-bezier(0.18, 0.7, 0.2, 1) both;
+  }
+  .carousel-slide.previous {
+    animation-name: signal-swipe-back;
+  }
+  @keyframes signal-swipe-in {
+    from {
+      opacity: 0;
+      transform: translateX(70%) rotateY(-12deg);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0) rotateY(0);
+    }
+  }
+  @keyframes signal-swipe-back {
+    from {
+      opacity: 0;
+      transform: translateX(-70%) rotateY(12deg);
+    }
+    to {
+      opacity: 1;
+      transform: translateX(0) rotateY(0);
+    }
+  }
+}
+/* Only explicit motion settings suppress transitions; autoplay/interaction pauses do not. */
+.carousel-viewport.motion-disabled .preview-content,
+.gallery .carousel-slide.still,
+.gallery.motion-paused .carousel-slide {
+  animation: none;
+}
+@media (max-width: 760px) {
+  .carousel-viewport.has-previews {
+    grid-template-columns: minmax(44px, 0.45fr) minmax(0, 2fr) minmax(
+        44px,
+        0.45fr
+      );
+    gap: 8px;
+  }
+  .carousel-preview {
+    padding: 12px 2px;
+    min-height: 185px;
+    transform: scale(0.94);
+  }
+  .carousel-preview.preview-next {
+    transform: scale(0.94);
+  }
+  .preview-direction {
+    justify-content: center;
+    font-size: 9px;
+  }
+  .preview-direction svg,
+  .preview-alert,
+  .preview-invitation {
+    display: none;
+  }
+  .preview-content {
+    gap: 20px;
+    margin-top: 20px;
+  }
+  .preview-id {
+    font-size: 12px;
+  }
+  .preview-population {
+    font-size: 22px;
+  }
+  .preview-population small {
+    display: block;
+    font-size: 10px;
+    margin: 0;
+  }
+  .gallery .carousel-slide .signal-title {
+    font-size: 17px;
+    overflow-wrap: anywhere;
+    gap: 6px;
+  }
+  .gallery .carousel-slide .signal-numbers {
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .gallery .carousel-slide .signal-footer {
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .gallery .signal-carousel {
+    --carousel-stage-height: 420px;
+    --carousel-controls-height: 108px;
+    margin-inline: 0;
+  }
+  .carousel-controls {
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .carousel-status {
+    order: 3;
+    flex-basis: 100%;
+  }
+  .gallery .carousel-slide .signal-card {
+    padding-inline: 0;
+  }
+}

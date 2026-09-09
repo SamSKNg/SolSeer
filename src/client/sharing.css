@@ -1,0 +1,65 @@
+.gallery .signal-footer {
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.signal-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-left: auto;
+}
+.copy-link-wrap {
+  min-width: 0;
+}
+.copy-server-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 36px;
+  padding: 8px 0;
+  border: 0;
+  border-bottom: 1px solid #d0c4a43d;
+  background: transparent;
+  color: #d5cebc;
+  font-size: 11px;
+}
+.copy-server-link:hover:not(:disabled) {
+  color: #fff5df;
+  border-color: #d0c4a4;
+}
+.copy-server-link:disabled {
+  opacity: 0.6;
+}
+.copy-announcement {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.copy-link-fallback {
+  display: grid;
+  gap: 6px;
+  margin-block: 10px;
+  font-size: 11px;
+  color: #c4bca8;
+}
+.copy-link-fallback input {
+  width: 100%;
+  min-width: 0;
+  max-width: 440px;
+  background: #141411;
+  color: #eee4d0;
+  border: 1px solid #bbb19855;
+  padding: 10px;
+  font-size: 11px;
+}
+.gallery .drawer .copy-link-wrap {
+  margin: 16px 0;
+}

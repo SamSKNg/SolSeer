@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sols-cluster-indicator"
+version = "0.2.0"
+description = "Rate-limited Sol's RNG public-server clustering detector"
+requires-python = ">=3.11"
+dependencies = [
+    "pandas>=2.0",
+    "requests>=2.31",
+    "streamlit>=1.37",
+]
+
+[project.scripts]
+cluster-indicator = "cluster_indicator.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

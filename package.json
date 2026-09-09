@@ -1,0 +1,32 @@
+{
+  "name": "sols-cluster-indicator",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "dev": "node src/server/index.js --dev",
+    "build": "vite build",
+    "prestart": "npm run build",
+    "start": "node src/server/index.js",
+    "start:authenticated": "powershell.exe -NoProfile -File scripts/start-authenticated.ps1",
+    "test": "node --test tests-js/*.test.js && vitest run",
+    "test:polling": "node scripts/test-polling.js",
+    "package:windows": "npm run build && node scripts/package-windows.js"
+  },
+  "dependencies": {
+    "lucide-react": "^0.468.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
+  },
+  "devDependencies": {
+    "@testing-library/react": "^16.3.3",
+    "@vitejs/plugin-react": "^4.4.0",
+    "jsdom": "^26.1.0",
+    "prettier": "^3.6.2",
+    "vite": "^6.3.0",
+    "vitest": "^5.0.0"
+  }
+}
