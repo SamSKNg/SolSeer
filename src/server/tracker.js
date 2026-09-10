@@ -15,6 +15,7 @@ export class Tracker {
       interval = ANONYMOUS_POLLING.interval,
       requestLimit = ANONYMOUS_POLLING.requestLimit,
       pagesPerPoll = ANONYMOUS_POLLING.pagesPerPoll,
+      coverageEvery = ANONYMOUS_POLLING.coverageEvery,
     } = {},
   ) {
     Object.assign(this, {
@@ -24,6 +25,7 @@ export class Tracker {
       interval,
       requestLimit,
       pagesPerPoll,
+      coverageEvery,
     });
     this.records = new Map();
     this.events = [];
@@ -92,7 +94,12 @@ export class Tracker {
     }
     this.busy = true;
     const paired = this.pagesPerPoll === 2;
-    const cursor = !paired && this.slot % 3 === 2 ? this.coverage : null;
+    const cursor =
+      !paired &&
+      this.coverageEvery > 0 &&
+      this.slot % this.coverageEvery === this.coverageEvery - 1
+        ? this.coverage
+        : null;
     const page = paired ? "Pages 1 + 2" : cursor ? "Coverage 100" : "Top 100";
     this.status = `Polling ${page.toLowerCase()}`;
     const start = this.now();
@@ -363,7 +370,7 @@ export class Tracker {
       }))
       .filter(
         (r) =>
-          (now - r.lastSeen <= 150000 &&
+          (now - r.lastSeen <= THRESHOLDS.freshnessMs &&
             r.players >= THRESHOLDS.minimumPlayers) ||
           ["potential", "cluster"].includes(r.alert),
       );
@@ -381,6 +388,7 @@ export class Tracker {
       requestLimit: this.requestLimit,
       pollIntervalMs: this.interval,
       pagesPerPoll: this.pagesPerPoll,
+      coverageEvery: this.coverageEvery,
       minimumPlayers: THRESHOLDS.minimumPlayers,
       tracked: this.records.size,
       rows,

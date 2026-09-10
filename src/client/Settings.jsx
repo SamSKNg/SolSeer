@@ -171,8 +171,9 @@ export function Settings() {
               include it in a support screenshot.
             </p>
             <p>
-              Used only by this app’s backend for Roblox public-server requests.
-              A cookie does not guarantee a higher rate limit.
+              Used only by this app’s backend for fixed Roblox public-server,
+              account identity, and presence requests. A cookie does not
+              guarantee a higher rate limit.
             </p>
           </div>
           {status && (

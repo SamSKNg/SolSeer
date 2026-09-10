@@ -12,6 +12,8 @@ import { pollingFor } from "./polling-config.js";
 import { launchRoblox } from "./auto-join.js";
 import { FeedbackCollector } from "./feedback.js";
 import { joinUrl } from "../shared/roblox-links.js";
+import { PresenceTracker } from "./presence-tracker.js";
+import { ScreenAutomation } from "./screen-automation.js";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const dev = process.argv.includes("--dev");
@@ -31,16 +33,35 @@ const tracker = new Tracker(store, {
   fetchFn: robloxFetch,
   ...pollingFor(robloxFetch.hasCookie),
 });
+const presence = new PresenceTracker({ request: robloxFetch });
+const automation = new ScreenAutomation();
 const notifications = new Notifications(settings.directory, {
   onAutoJoin: async ({ id }) => {
+    const current = await presence.refresh();
+    if (current.serverId === id) return false;
     const launched = await launchRoblox(joinUrl(id), {
       onError: () => console.error("Unable to launch Roblox automatically."),
     });
     if (launched) tracker.recordJoin(id);
+    return launched;
   },
+  onPreferencesChanged: (preferences) => automation.configure(preferences),
 });
+automation.configure(notifications.preferences);
 const snapshot = () => {
-  const value = tracker.snapshot();
+  const tracked = tracker.snapshot();
+  const accountPresence = presence.snapshot();
+  const screen = automation.snapshot();
+  const value = {
+    ...tracked,
+    currentServerId: accountPresence.serverId,
+    presence: accountPresence,
+    automation: screen,
+    rows: tracked.rows.map((row) => ({
+      ...row,
+      isCurrentServer: row.id === accountPresence.serverId,
+    })),
+  };
   return { ...value, notifications: notifications.update(value) };
 };
 const streams = new EventStreams(snapshot);
@@ -54,6 +75,8 @@ const broadcast = () => {
   streams.broadcast();
 };
 tracker.onUpdate = broadcast;
+presence.onUpdate = broadcast;
+automation.onUpdate = broadcast;
 const server = http.createServer(async (req, res) => {
   try {
     // Loopback-only Host allowlist also blocks browser DNS-rebinding access.
@@ -177,9 +200,10 @@ const server = http.createServer(async (req, res) => {
             { status: 400 },
           );
         }
-        const status = await settings.save(payload.cookie, (request) =>
-          tracker.configureFetch(request),
-        );
+        const status = await settings.save(payload.cookie, (request) => {
+          tracker.configureFetch(request);
+          presence.configureRequest(request);
+        });
         res.end(JSON.stringify(status));
       } catch (error) {
         res.writeHead(error.status || 500).end(
@@ -231,6 +255,11 @@ const server = http.createServer(async (req, res) => {
         res.writeHead(400).end("Invalid Job ID");
         return;
       }
+      if (presence.snapshot().serverId === id) {
+        res.writeHead(409).end("Already in this Roblox server");
+        return;
+      }
+      notifications.startJoinCooldown(id, Date.now());
       res.writeHead(303, { Location: tracker.recordJoin(id) });
       res.end();
       return;
@@ -287,11 +316,16 @@ server.on("error", async (error) => {
 });
 server.listen(port, "127.0.0.1", () => {
   console.log(`Signal is ready at http://localhost:${server.address().port}`);
-  if (process.env.CLUSTER_NO_POLL !== "1") tracker.start();
+  if (process.env.CLUSTER_NO_POLL !== "1") {
+    tracker.start();
+    presence.start();
+  }
 });
 const heartbeat = setInterval(broadcast, 1000);
 async function shutdown() {
   tracker.stop();
+  presence.stop();
+  automation.stop();
   clearInterval(heartbeat);
   streams.close();
   server.close();

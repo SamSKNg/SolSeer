@@ -20,8 +20,10 @@ You get:
 - Join/rejoin buttons, copyable server links, and a record of join attempts for the session.
 - Rare biome / Not rare labels on join attempts, saved locally with their population graph evidence for future analysis.
 - Optional desktop notifications and opt-in Windows auto-join, so you don't have to stare at the page.
+- Exact account-presence tracking, a **You are here** marker, and current-server exclusion for joins.
+- Always-on 1080p/1440p fullscreen biome OCR, optional Play automation, and user-selected biomes that pause auto-join.
 
-It doesn't read the biome inside a server, inject anything into Roblox, or confirm that a join attempt got you into the game. The only detection input is sampled public population data. A friend group joining together can look like a rare-biome rush. False positives are part of the tradeoff here.
+Population signals still do not confirm a biome. A separate Windows-only OCR helper reads the visible biome label from the foreground Roblox window even when Auto-Start is off; it does not inject into Roblox. Auto-Start controls only the optional mouse and keyboard automation. A friend group joining together can look like a rare-biome rush, and OCR can misread stylized text. False positives are part of the tradeoff here.
 
 ### joining a server
 
@@ -30,6 +32,12 @@ Join and Rejoin record your click locally, then hand off straight to the install
 You need Roblox installed and signed in. Your browser may ask **Open Roblox?**; allow it if you intended to join. The cookie in solseer's Settings is for polling, not for signing the Roblox client into an account. This doesn't bypass full servers or access restrictions, and solseer can't verify which server the client ultimately joins.
 
 On Windows, the **Auto-join** toggle beside **Signals to watch** launches the installed Roblox app for at most one newly detected server per poll. Settings has independent **Auto-join early leads** and **Auto-join rapid filling** choices; full Rapid signals are included so Roblox can place the attempt in its queue. It records the attempt in Join history, does not replay a signal that was already active when you enabled it, and does not launch the same episode again after a later tier change.
+
+With a valid cookie, solseer checks the configured account's Roblox presence every five seconds. When Roblox reports the exact Sol's RNG Job ID, a compact biome-colored current-server card appears below the tracker statistics with large server, username, and biome labels. That server also gets a **You are here** marker and its Join control is disabled. Auto-join excludes it and refreshes presence once more immediately before launching another server. Presence can lag or hide the Job ID, and private/reserved instances may not appear in the public list.
+
+Biome OCR runs whenever solseer is open and works only while Roblox is the foreground maximized window at the **1920 × 1080** or **2560 × 1440** resolution selected in Settings. The adjacent **Auto-Start** toggle is separate and off by default. When enabled, it also OCRs the Play-button region and, after two fuzzy matches, sends a short horizontal mouse-motion sweep so Roblox enters the button's hover state, then uses the Windows `SendInput` path to press and release Play. If three consecutive in-game reads cannot recognize a known biome, Auto-Start taps `O` up to eight times to zoom out; Play-screen recognition suppresses those key presses. The helper never captures the rest of the desktop; cropped frames are temporary and deleted immediately after OCR. The last recognized biome remains the current biome when a later frame cannot be read, and a selected current biome pauses auto-join.
+
+Every manual or automatic join starts a **60-second auto-join cooldown**, preventing another signal from switching servers while Roblox is waiting at or loading past the Play screen. When Auto-Start has clicked Play and a later biome reading confirms the game view is ready, that cooldown ends early. The current-server card shows the remaining cooldown when presence is available.
 
 **Copy server link** copies that same direct-app link. Some chat apps won't make `roblox://` links clickable; recipients can paste the full link into their browser's address bar. There is no automatic fallback to normal matchmaking. If the app doesn't open, check that Roblox is installed and that your browser hasn't blocked the launch prompt.
 
@@ -46,7 +54,7 @@ These are hand-written rules, not a trained model. The thresholds are starting p
 | Burst loss threshold | At least half of the original burst gain has left                                                                    | Remove the retained burst and its corner notice immediately.                                                                                                                      |
 | Full signal          | A Rapid burst reaches 20/20, or a **+2 within 15.5s** burst is first seen at capacity                                | Rapid stays Rapid and can notify/auto-join into the queue; a full Early burst remains an informational recent lead.                                                               |
 | Sustained occupancy  | **19–20/20 for at least one observed minute**, with no observation gaps over 20 seconds                              | Context only. Being full does not create an alert on its own.                                                                                                                     |
-| Falling off / stale  | No actual observation of that server for **more than 20 seconds**                                                    | Immediately remove it from signals and treat it as non-important. Keep its last reading briefly in the live list for context.                                                     |
+| Falling off / stale  | No actual observation of that server for **more than 20 seconds**                                                    | Immediately remove it from signals and the live server list while retaining internal history for safe stale-return baselines.                                                     |
 
 A few details that matter:
 
@@ -61,7 +69,7 @@ A few details that matter:
 
 ### how leads are ranked
 
-The signal carousel and card index sort fresh signals by **player count descending**, using the signal ranking below to break ties. Stale servers do not appear there. Their last reading can remain briefly in the population-sorted expandable live list as **Falling off · stale**.
+The signal carousel, card index, and live list contain only fresh servers and sort by **player count descending**, using signal ranking to break ties. Stale records remain internal only so a returning server cannot recycle an old growth baseline.
 
 Signal priority puts fresh candidates with open slots first, then full candidates. Within those groups, active growth comes before retained bursts; rapid filling comes before early growth. Peer-relative growth, follow-up confirmation, observed growth pace, freshness, and a stable server ID break ties. The actionable corner notice and desktop notifications retain this urgency-based ranking rather than following the population display order.
 
@@ -79,19 +87,15 @@ These are comparisons within our sampled servers, not all Roblox servers and def
 
 The rules live in [scorer.js](src/server/scorer.js), retention in [burst-memory.js](src/server/burst-memory.js), and peer comparisons in [peer-growth.js](src/server/peer-growth.js); the shared ordering lives in [signals.js](src/shared/signals.js).
 
-## three-second polling does not mean every server, every three seconds
+## two-second polling stays on the top page
 
-With a cookie configured, solseer targets **one two-page poll cycle every 3 seconds**, capped at **40 API attempts per rolling minute**. Page 1 supplies a fresh cursor for page 2, so the two requests run back-to-back, not simultaneously. There is no additional three-second wait between them. Each pair counts as **one completed heuristic poll** for time windows and the two-poll grace. Without a cookie, it's still **one page every 20.5 seconds / 3 attempts per minute**. The anonymous cadence can't resolve the 15.5-second burst window; the UI warns about this rather than pretending it can.
+With a cookie configured, solseer targets **one top-page request every 2 seconds**, capped at **40 API attempts per rolling minute**. Each request fetches at most 100 servers and counts as one completed heuristic poll. Authenticated mode does not follow a page cursor: faster top-page refreshes are more useful now that servers falling out of that sample are removed from the UI after 20 seconds.
 
-Each request fetches at most 100 servers. Authenticated polling repeatedly fetches:
+**top 100 → 2 seconds → top 100 → 2 seconds → top 100**
 
-**page 1 → page 2 → next three-second cycle → page 1 → page 2**
+Without a cookie, polling remains **one page every 20.5 seconds / 3 attempts per minute** and retains its top → top → discovery-page rotation. That anonymous cadence cannot resolve the 15.5-second burst window; the UI warns about this rather than pretending it can.
 
-This refreshes up to 200 servers per cycle; authenticated polling no longer explores deeper pages. If page 1 has no next cursor, only one request is made. If the budget or Roblox cooldown prevents page 2, or page 2 fails, page 1's successful readings still update and the timeline marks a partial cycle. The next cycle starts with a fresh page 1, not an old page-2 cursor. Servers appearing on both pages contribute only one observation per cycle, using the later page's valid reading and its real timestamp. API request counters count both attempts, including failures; the timeline groups them by cycle.
-
-Anonymous mode retains its top → top → next discovery page rotation. Servers outside the fetched pages can still go stale, and population sorting can move servers between pages. A three-second target is not a guarantee that every server is observed every three seconds.
-
-That's why stale readings exist. "Last seen at 17/20" is not the same as "there are three slots open right now."
+A two-second target is not a guarantee that every visible server is observed every two seconds. Population ordering can move servers into or out of the top page, and network or quota delays still apply. "Last seen at 17/20" is not the same as "there are three slots open right now."
 
 Roblox rate limits, slow responses, and errors can delay things further. The tracker respects its local request budget and Roblox's reported cooldowns, including failures and retries. Alerts don't fast-forward polling or add requests. A cookie selects a faster local schedule; **it does not guarantee Roblox will accept that rate**. Authentication failures slow the tracker down.
 
@@ -118,7 +122,7 @@ The app listens on your machine only. This is a local tool, not a hosted service
 
 ### windows, without installing node
 
-Grab the [v0.3.0 Windows x64 ZIP](https://github.com/SamSKNg/SolSeer/releases/download/v0.3.0/solseer-v0.3.0-windows-x64.zip). See the [release notes](docs/releases/v0.3.0.md) for what changed. When updating, stop the old copy and extract the new ZIP into a fresh folder; your saved cookie, notification preferences, and biome feedback stay in their separate local settings folder.
+Grab the [v0.4.0 Windows x64 ZIP](https://github.com/SamSKNg/SolSeer/releases/download/v0.4.0/solseer-v0.4.0-windows-x64.zip). See the [release notes](docs/releases/v0.4.0.md) for what changed. When updating, stop the old copy and extract the new ZIP into a fresh folder; your saved cookie, notification preferences, and biome feedback stay in their separate local settings folder.
 
 If you have a portable ZIP, extract the whole thing and double-click **Start solseer.cmd** inside the `solseer` folder. Keep its console open; Ctrl+C stops it. Stop an existing copy first if the port is already occupied.
 
@@ -140,7 +144,7 @@ Using one is optional. If you choose to:
 2. Paste just the cookie value, without `Cookie:` or `.ROBLOSECURITY=`.
 3. Acknowledge plaintext storage and choose **Save on this machine**.
 
-The app doesn't extract cookies from your Roblox client or browser. The value stays on the backend and is sent only to the Roblox public-server-list endpoint over HTTPS; redirects are refused. Settings shows whether a cookie is configured, never the saved value. "Configured" doesn't mean verified or entitled to a higher limit.
+The app doesn't extract cookies from your Roblox client or browser. The value stays on the backend and is sent only to three fixed Roblox endpoints over HTTPS: the Sol's RNG public-server list, the authenticated-user identity read, and that user's presence read. Redirects are refused. No inventory, trade, purchase, message, or account-changing endpoint is allowed. Settings shows whether a cookie is configured, never the saved value. "Configured" doesn't mean verified or entitled to a higher limit.
 
 The saved file is **plaintext, not encrypted**: `%LOCALAPPDATA%\solseer\.env` on Windows, or `~/.config/solseer/.env` elsewhere. Don't sync or share that folder. Local malware or someone with access to your files can still read it. This is a vibe-coded side project, not a reason to be casual with an account credential.
 
@@ -161,17 +165,17 @@ On Windows, `npm run start:authenticated` offers a masked, non-persistent prompt
 
 ## notifications and what survives a restart
 
-In Settings, choose early leads and/or rapid filling for desktop alerts, plus which of those two tiers Auto-join may open. The main Server radar page has the separate Windows auto-join master toggle beside **Signals to watch**. Browser permission is required only for desktop alerts. The test button doesn't call Roblox. Both delivery options are off by default.
+In Settings, choose early leads and/or rapid filling for desktop alerts, which tiers Auto-join may open, the 1080p/1440p OCR mode, and biomes that pause auto-join. The main Server radar page has separate Windows **Auto-join** and **Auto-Start** toggles below **Signals to watch**. Browser permission is required only for desktop alerts. Mouse and keyboard automation remain off by default.
 
 Keep the backend app running. Desktop alerts additionally need an open browser tab; browser permissions and OS notification settings are separate from solseer's preferences and may suppress delivery. Auto-join launches Roblox from the local Windows backend and does not require the browser tab to remain open.
 
 Desktop alerts fire once per signal episode, with one extra alert for a rapid-filling upgrade. Repeated polls don't spam you. Two completed polls outside candidate status rearm a server. Simultaneous alerts are grouped and delivery is shared across tabs. A newly full Rapid signal can alert; full Early, stale, and held-only leads do not create a new desktop alert. Queued alerts are rechecked before delivery. Clicking a desktop notification opens details. Auto-join is a separate opt-in and launches only the strongest enabled new signal in a poll.
 
-**Saved locally:** cookie configuration and notification preferences.
+**Saved locally:** cookie configuration, notification/auto-join preferences, Auto-Start mode, and the biome target list.
 
 Biome feedback is also saved locally in `biome-feedback.json` beside the settings file. Each labeled example contains the Job ID, join-time signal fields, and up to 120 recent public population observations. It contains no Roblox cookie or account identity. Changing a label replaces that example; choosing **Unmarked** removes it from the collection.
 
-**Session only:** population history, signal holds, notification/auto-join deduplication, join attempts, joined markers, and local request/cooldown tracking. A refresh or another tab shares the running backend session. Restarting the backend clears it. A recorded join means solseer attempted the handoff, not that Roblox let you in.
+**Session only:** population history, signal holds, notification/auto-join deduplication, join attempts, account-presence state, OCR results, joined/current markers, and local request/cooldown tracking. A refresh or another tab shares the running backend session. Restarting the backend clears it. A recorded join means solseer attempted the handoff; the presence marker is separate evidence that Roblox reports the configured account in that Job ID.
 
 ## poking around
 

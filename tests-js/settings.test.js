@@ -81,9 +81,10 @@ test("cookie changes preserve quota and cooldown and take effect after in-flight
     tracker.configureFetch(createRobloxFetch("synthetic-new"));
     finish(new Response("", { status: 401 }));
     await poll;
-    assert.equal(tracker.interval, 3000);
+    assert.equal(tracker.interval, 2000);
     assert.equal(tracker.requestLimit, 40);
-    assert.equal(tracker.pagesPerPoll, 2);
+    assert.equal(tracker.pagesPerPoll, 1);
+    assert.equal(tracker.coverageEvery, 0);
     assert.equal(tracker.nextAt, 1060000);
     store.cooldown(1100000);
     tracker.configureFetch(createRobloxFetch(""));

@@ -94,14 +94,9 @@ test("stale burst memory stops being actionable and clears on a stale return", a
     await f.poll(15);
     await f.poll(17);
     f.advance(21000);
-    assert.equal(f.tracker.snapshot().rows[0].signalHoldPollsRemaining, 2);
-    assert.equal(f.tracker.snapshot().rows[0].signalHoldPollsRemaining, 2);
+    assert.deepEqual(f.tracker.snapshot().rows, []);
     const row = await f.poll(null);
-    assert.equal(row.signalHoldPollsRemaining, 1);
-    assert.equal(row.alert, "watch");
-    assert.equal(row.isFresh, false);
-    assert.equal(row.notificationEligible, false);
-    assert.equal(row.noticeEligible, false);
+    assert.equal(row, undefined);
     f.advance(160000);
     assert.deepEqual(f.tracker.snapshot().rows, []);
     assert.equal(await f.poll(null), undefined);

@@ -26,6 +26,9 @@ const preferences = {
   autoJoin: false,
   autoJoinPotential: true,
   autoJoinCluster: true,
+  autoStart: false,
+  ocrResolution: "1440p",
+  biomeTargets: [],
 };
 const events = [
   { id: "candidate-123", alert: "potential", players: 17, capacity: 20 },
@@ -100,6 +103,27 @@ test("settings save independent auto-join choices for early and rapid signals", 
     ...preferences,
     autoJoinPotential: false,
     autoJoinCluster: true,
+  });
+});
+
+test("settings save the calibrated 1080p mode and biome targets", async () => {
+  mockNotifications();
+  const fetchMock = vi.fn(async () => ({ ok: true }));
+  vi.stubGlobal("fetch", fetchMock);
+  render(
+    <NotificationSettings ready initial={preferences} token="safe-token" />,
+  );
+  fireEvent.click(screen.getByLabelText(/1920 × 1080/));
+  fireEvent.click(screen.getByLabelText("Glitched"));
+  fireEvent.click(screen.getByLabelText("Dreamspace"));
+  fireEvent.click(
+    screen.getByRole("button", { name: "Save signal preferences" }),
+  );
+  await screen.findByText(/Signal preferences saved/);
+  expect(JSON.parse(fetchMock.mock.calls[0][1].body).notifications).toEqual({
+    ...preferences,
+    ocrResolution: "1080p",
+    biomeTargets: ["Glitched", "Dreamspace"],
   });
 });
 

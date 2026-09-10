@@ -21,6 +21,8 @@ import {
   Settings2,
   GalleryHorizontal,
   LayoutGrid,
+  MapPin,
+  ScanLine,
 } from "lucide-react";
 import "./styles.css";
 import { PollCountdown } from "./PollCountdown.jsx";
@@ -42,6 +44,29 @@ import {
 } from "../shared/signals.js";
 
 const labels = signalLabels;
+const biomeColors = {
+  Normal: "#c7ccd3",
+  Windy: "#a7e8f5",
+  Snowy: "#e3f6ff",
+  Rainy: "#5e91ff",
+  Sandstorm: "#d7ad61",
+  Hell: "#ff5147",
+  Starfall: "#9581ff",
+  Heaven: "#ffe4a1",
+  Corruption: "#b94aff",
+  Null: "#80efc4",
+  Glitched: "#fa5cdd",
+  Dreamspace: "#d184ff",
+  Cyberspace: "#35dcff",
+  Singularity: "#ffca64",
+  "Pumpkin Moon": "#ff842f",
+  Graveyard: "#989bad",
+  "Blazing Sun": "#ffb936",
+  "Blood Rain": "#dc4058",
+  Aurora: "#67f0c8",
+  Eggland: "#fff18c",
+  Incinerator: "#ff6335",
+};
 const pace = (row) =>
   row.growthPer10s == null ? "—" : row.growthPer10s.toFixed(1);
 const peerSummary = (row) =>
@@ -74,6 +99,9 @@ const blank = {
   tracked: 0,
   totalJoins: 0,
   notifications: null,
+  presence: null,
+  automation: null,
+  currentServerId: null,
 };
 
 function Badge({ value, row }) {
@@ -84,16 +112,26 @@ function Badge({ value, row }) {
     </span>
   );
 }
-function Join({ id, children = "Join server", compact = false }) {
+function Join({
+  id,
+  children = "Join server",
+  compact = false,
+  disabled = false,
+}) {
   return (
     <form
       action={`/api/join/${encodeURIComponent(id)}`}
       method="POST"
       target="_blank"
+      onSubmit={disabled ? (event) => event.preventDefault() : undefined}
     >
-      <button className={`join ${compact ? "compact" : ""}`} type="submit">
+      <button
+        className={`join ${compact ? "compact" : ""}`}
+        type="submit"
+        disabled={disabled}
+      >
         {children}
-        <ArrowUpRight size={15} />
+        {disabled ? <MapPin size={15} /> : <ArrowUpRight size={15} />}
       </button>
     </form>
   );
@@ -160,7 +198,7 @@ export function App() {
       feedbackRequest.current?.abort();
     };
   }, []);
-  const toggleAutoJoin = async () => {
+  const togglePreference = async (key) => {
     if (autoJoinBusy) return;
     const preferences = data.notifications?.preferences;
     if (!preferences) return;
@@ -186,7 +224,7 @@ export function App() {
         body: JSON.stringify({
           notifications: {
             ...(latestPreferences ?? preferences),
-            autoJoin: !preferences.autoJoin,
+            [key]: !preferences[key],
           },
         }),
         signal: controller.signal,
@@ -203,12 +241,30 @@ export function App() {
         }));
     } catch {
       if (!controller.signal.aborted)
-        setAutoJoinError("Could not update auto-join. Try again.");
+        setAutoJoinError(
+          `Could not update ${key === "autoStart" ? "Auto-Start" : "auto-join"}. Try again.`,
+        );
     } finally {
       if (!controller.signal.aborted) setAutoJoinBusy(false);
       if (autoJoinRequest.current === controller)
         autoJoinRequest.current = null;
     }
+  };
+  const toggleAutoJoin = () => togglePreference("autoJoin");
+  const toggleAutoStart = () => {
+    const enabled = data.notifications?.preferences.autoStart;
+    const resolution =
+      data.notifications?.preferences.ocrResolution === "1080p"
+        ? "1920 × 1080"
+        : "2560 × 1440";
+    if (
+      !enabled &&
+      !window.confirm(
+        `Auto-Start uses OCR, keyboard zoom, and a mouse click only while Roblox is the foreground maximized window on a ${resolution} display. Keep Roblox maximized and do not enable this while using another Roblox window. Continue?`,
+      )
+    )
+      return;
+    togglePreference("autoStart");
   };
   const setBiomeOutcome = async (joinId, outcome) => {
     if (feedbackBusy != null) return;
@@ -319,6 +375,19 @@ export function App() {
     [data, min, hideJoined, alertsOnly, search],
   );
   const detail = data.rows.find((r) => r.id === selected);
+  const currentServerId = data.currentServerId ?? data.presence?.serverId;
+  const currentBiome = data.automation?.biome ?? null;
+  const currentBiomeColor = biomeColors[currentBiome] ?? "#c7ccd3";
+  const autoJoinCooldownSeconds = data.notifications?.autoJoinCooldownUntil
+    ? Math.max(
+        0,
+        Math.ceil(
+          (data.notifications.autoJoinCooldownUntil -
+            (data.now ?? Date.now())) /
+            1000,
+        ),
+      )
+    : 0;
   const titles = {
     settings: ["Settings", "Your connection, kept on this machine."],
     servers: ["Server radar", "Follow the movement. Find the signal."],
@@ -499,17 +568,72 @@ export function App() {
               note={`Last result ${date(data.lastAt)}`}
             />
           </section>
+          {tab === "servers" && currentServerId && (
+            <section
+              className="current-server-card"
+              aria-label="Current Roblox server"
+              data-reveal="visible"
+              style={{ "--biome-color": currentBiomeColor }}
+            >
+              <div className="current-server-card-icon" aria-hidden="true">
+                <MapPin size={19} />
+              </div>
+              <div className="current-server-card-copy">
+                <span>Current Roblox server</span>
+                <div className="current-server-identity">
+                  <button
+                    type="button"
+                    onClick={() => setSelected(currentServerId)}
+                  >
+                    Server {currentServerId.slice(0, 8)}
+                  </button>
+                  <strong>{data.presence?.username ?? "Account"}</strong>
+                  <strong className="current-server-biome">
+                    {currentBiome ?? "Biome pending"}
+                  </strong>
+                </div>
+                <small>
+                  Presence confirmed
+                  {currentBiome
+                    ? data.automation?.biomeFresh
+                      ? " · live biome reading"
+                      : " · last detected biome"
+                    : " · waiting for first biome reading"}
+                </small>
+              </div>
+              <div className="current-server-card-state">
+                <span>Connected</span>
+                {autoJoinCooldownSeconds > 0 && (
+                  <small>Join cooldown {autoJoinCooldownSeconds}s</small>
+                )}
+              </div>
+              <div className="current-server-card-actions">
+                <CopyServerLink id={currentServerId} />
+                <button
+                  type="button"
+                  onClick={() => setSelected(currentServerId)}
+                >
+                  Inspect <ArrowUpRight size={14} aria-hidden="true" />
+                </button>
+              </div>
+            </section>
+          )}
           {tab === "servers" && (
             <>
-              <div
-                className="section-heading signal-section-heading"
-                data-reveal="visible"
-              >
-                <h2>
-                  <span className="chapter-label">a few things stirring</span>{" "}
-                  Signals to watch
-                </h2>
+              <div className="signal-section-header" data-reveal="visible">
+                <div className="section-heading signal-section-heading">
+                  <h2>Signals to watch</h2>
+                </div>
                 <div className="signal-heading-actions">
+                  {data.automation && (
+                    <p className="ocr-status ocr-status-inline" role="status">
+                      <ScanLine size={14} aria-hidden="true" />
+                      {data.automation?.biome
+                        ? `${data.automation.biome}${data.automation.biomeFresh ? " · live OCR" : " · last OCR"}`
+                        : data.automation?.message ||
+                          "Starting fullscreen OCR…"}
+                    </p>
+                  )}
                   <span className="subtle">
                     {alerts.length} signals · population descending
                   </span>
@@ -527,6 +651,21 @@ export function App() {
                     {autoJoinBusy
                       ? "Saving auto-join…"
                       : `Auto-join ${data.notifications?.preferences.autoJoin ? "On" : "Off"}`}
+                  </button>
+                  <button
+                    type="button"
+                    className="auto-join-toggle auto-start-toggle"
+                    aria-pressed={Boolean(
+                      data.notifications?.preferences.autoStart,
+                    )}
+                    disabled={autoJoinBusy || !data.notifications?.preferences}
+                    title={`Windows only. With Roblox foreground and maximized at ${data.notifications?.preferences.ocrResolution === "1080p" ? "1920 × 1080" : "2560 × 1440"}, reads the biome label, zooms out if OCR is unclear, and clicks Play after two fuzzy matches.`}
+                    onClick={toggleAutoStart}
+                  >
+                    <ScanLine size={15} aria-hidden="true" />
+                    {autoJoinBusy
+                      ? "Saving Auto-Start…"
+                      : `Auto-Start ${data.notifications?.preferences.autoStart ? "On" : "Off"}`}
                   </button>
                   <div
                     className="signal-view-switch"
@@ -556,6 +695,12 @@ export function App() {
                   {autoJoinError}
                 </p>
               )}
+              {data.notifications?.autoJoinPausedBiome && (
+                <p className="target-biome-status" role="status">
+                  Auto-join paused · target biome{" "}
+                  {data.notifications.autoJoinPausedBiome} detected
+                </p>
+              )}
               <SignalView
                 view={signalView}
                 items={alerts}
@@ -575,7 +720,14 @@ export function App() {
                       className="signal-title"
                       onClick={() => setSelected(r.id)}
                     >
-                      Server {r.id.slice(0, 8)}
+                      <span>
+                        Server {r.id.slice(0, 8)}
+                        {r.isCurrentServer && (
+                          <span className="current-server-marker">
+                            <MapPin size={13} aria-hidden="true" /> You are here
+                          </span>
+                        )}
+                      </span>
                       <ArrowUpRight size={17} />
                     </button>
                     <div className="signal-numbers">
@@ -600,7 +752,11 @@ export function App() {
                       {peerSummary(r)}
                     </p>
                     <div className="signal-footer">
-                      {r.joined ? (
+                      {r.isCurrentServer ? (
+                        <span className="current-server-marker">
+                          <MapPin size={13} aria-hidden="true" /> Current server
+                        </span>
+                      ) : r.joined ? (
                         <span
                           className="previously-joined"
                           title={`${r.joined.count} recorded join attempt(s) this session. Arrival in Roblox is not confirmed.`}
@@ -613,8 +769,12 @@ export function App() {
                       )}
                       <div className="signal-actions">
                         <CopyServerLink id={r.id} />
-                        <Join id={r.id} compact>
-                          {r.joined ? "Rejoin" : "Join server"}
+                        <Join id={r.id} compact disabled={r.isCurrentServer}>
+                          {r.isCurrentServer
+                            ? "Current server"
+                            : r.joined
+                              ? "Join again"
+                              : "Join server"}
                         </Join>
                       </div>
                     </div>
@@ -760,6 +920,12 @@ export function App() {
                                   </span>
                                   <span>
                                     {r.id.slice(0, 8)}
+                                    {r.isCurrentServer && (
+                                      <small className="current-server-marker">
+                                        <MapPin size={11} aria-hidden="true" />
+                                        You are here
+                                      </small>
+                                    )}
                                     <small>{r.ping ?? "—"} ms ping</small>
                                   </span>
                                 </button>
@@ -817,8 +983,16 @@ export function App() {
                                 )}
                               </td>
                               <td>
-                                <Join id={r.id} compact>
-                                  {r.joined ? "Rejoin" : "Join"}
+                                <Join
+                                  id={r.id}
+                                  compact
+                                  disabled={r.isCurrentServer}
+                                >
+                                  {r.isCurrentServer
+                                    ? "Current"
+                                    : r.joined
+                                      ? "Join again"
+                                      : "Join"}
                                 </Join>
                               </td>
                             </tr>
@@ -897,8 +1071,14 @@ export function App() {
                           </select>
                         </td>
                         <td>
-                          <Join id={j.jobId} compact>
-                            Rejoin
+                          <Join
+                            id={j.jobId}
+                            compact
+                            disabled={j.jobId === data.currentServerId}
+                          >
+                            {j.jobId === data.currentServerId
+                              ? "Current"
+                              : "Join again"}
                           </Join>
                         </td>
                       </tr>
@@ -1047,8 +1227,12 @@ export function App() {
             <button onClick={() => setSelected(notice.id)}>
               Inspect signal
             </button>
-            <Join id={notice.id} compact>
-              {notice.joined ? "Rejoin" : "Join"}
+            <Join id={notice.id} compact disabled={notice.isCurrentServer}>
+              {notice.isCurrentServer
+                ? "Current"
+                : notice.joined
+                  ? "Join again"
+                  : "Join"}
             </Join>
           </div>
         </aside>
@@ -1175,23 +1359,42 @@ export function App() {
                   {Math.floor((detail.nearFullDurationMs ?? 0) / 1000)}s / 60s.
                 </p>
                 <CopyServerLink id={detail.id} />
-                <Join id={detail.id} />
+                <Join id={detail.id} disabled={detail.isCurrentServer}>
+                  {detail.isCurrentServer
+                    ? "Current server"
+                    : detail.joined
+                      ? "Join again"
+                      : "Join server"}
+                </Join>
                 <p className="detail-note">
-                  {detail.joined
-                    ? `Previously joined · ${detail.joined.count} recorded join attempt(s). Last attempt ${date(detail.joined.at)}. Arrival in Roblox is not confirmed.`
-                    : "Opening a server records a join attempt for this session only."}
+                  {detail.isCurrentServer
+                    ? "Roblox presence reports that your configured account is in this server."
+                    : detail.joined
+                      ? `Previously joined · ${detail.joined.count} recorded join attempt(s). Last attempt ${date(detail.joined.at)}. Arrival in Roblox is not confirmed.`
+                      : "Opening a server records a join attempt for this session only."}
                 </p>
               </>
             ) : (
               <>
-                <h2>Server left the recent sample</h2>
+                <h2>
+                  {selected === data.currentServerId
+                    ? "Your current Roblox server"
+                    : "Server left the recent sample"}
+                </h2>
                 <p>
                   It may still be running. This Job ID is available for this
                   session.
                 </p>
                 <code>{selected}</code>
                 <CopyServerLink id={selected} />
-                <Join id={selected} />
+                <Join
+                  id={selected}
+                  disabled={selected === data.currentServerId}
+                >
+                  {selected === data.currentServerId
+                    ? "Current server"
+                    : "Join server"}
+                </Join>
               </>
             )}
           </aside>

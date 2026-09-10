@@ -31,7 +31,7 @@ try {
   );
   store = new Store();
   console.log(
-    `Bounded single-page diagnostic: up to ${AUTHENTICATED_POLLING.requestLimit} requests, minimum ${AUTHENTICATED_POLLING.interval / 1000}s between starts. This is not the app's two-page-per-cycle load test. Normal app settings are unchanged.`,
+    `Bounded top-page diagnostic: up to ${AUTHENTICATED_POLLING.requestLimit} requests, minimum ${AUTHENTICATED_POLLING.interval / 1000}s between starts. This matches the authenticated app's one-page cadence.`,
   );
   const results = await runPollingProbe({ store, request });
   if (

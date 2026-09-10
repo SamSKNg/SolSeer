@@ -13,6 +13,8 @@ function fixture(fetchFn) {
   const calls = [];
   const tracker = new Tracker(store, {
     ...AUTHENTICATED_POLLING,
+    interval: 3000,
+    pagesPerPoll: 2,
     now: () => now,
     fetchFn: async (url, options) => {
       const cursor = new URL(url).searchParams.get("cursor");

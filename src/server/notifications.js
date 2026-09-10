@@ -4,29 +4,50 @@ import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import { DEFAULT_NOTIFICATIONS } from "../shared/notifications.js";
 import { compareSignals, isActionable } from "../shared/signals.js";
+import { normalizeBiome, validateBiomeTargets } from "../shared/biomes.js";
 
 const eligible = (row) =>
   row?.notificationEligible === true && isActionable(row);
+const AUTO_JOIN_COOLDOWN_MS = 60000;
 
 function validate(value) {
   const required = ["enabled", "potential", "cluster"];
-  const optional = ["autoJoin", "autoJoinPotential", "autoJoinCluster"];
+  const optional = [
+    "autoJoin",
+    "autoJoinPotential",
+    "autoJoinCluster",
+    "autoStart",
+  ];
   if (
     !value ||
     required.some((key) => typeof value[key] !== "boolean") ||
     optional.some(
       (key) => value[key] !== undefined && typeof value[key] !== "boolean",
-    )
+    ) ||
+    (value.ocrResolution !== undefined &&
+      !["1080p", "1440p"].includes(value.ocrResolution))
   )
     throw Object.assign(new Error("Invalid notification preferences."), {
       status: 400,
     });
-  return Object.fromEntries(
-    Object.keys(DEFAULT_NOTIFICATIONS).map((key) => [
-      key,
-      value[key] ?? DEFAULT_NOTIFICATIONS[key],
-    ]),
-  );
+  let biomeTargets;
+  try {
+    biomeTargets = validateBiomeTargets(value.biomeTargets ?? []);
+  } catch {
+    throw Object.assign(new Error("Invalid biome target list."), {
+      status: 400,
+    });
+  }
+  return {
+    ...Object.fromEntries(
+      Object.keys(DEFAULT_NOTIFICATIONS).map((key) => [
+        key,
+        value[key] ?? DEFAULT_NOTIFICATIONS[key],
+      ]),
+    ),
+    ocrResolution: value.ocrResolution ?? "1440p",
+    biomeTargets,
+  };
 }
 
 const eventFor = (row, snapshot) => ({
@@ -47,10 +68,17 @@ export class Notifications {
   #pending = [];
   #poll = 0;
   #saving = false;
-  constructor(directory, { onAutoJoin = () => {} } = {}) {
+  #autoJoinCooldownStartedAt = 0;
+  #autoJoinCooldownUntil = 0;
+  #autoJoinCooldownServerId = null;
+  constructor(
+    directory,
+    { onAutoJoin = () => {}, onPreferencesChanged = () => {} } = {},
+  ) {
     this.directory = directory;
     this.path = join(directory, "notifications.json");
     this.onAutoJoin = onAutoJoin;
+    this.onPreferencesChanged = onPreferencesChanged;
     try {
       this.#preferences = validate(JSON.parse(readFileSync(this.path, "utf8")));
     } catch {
@@ -58,7 +86,15 @@ export class Notifications {
     }
   }
   get preferences() {
-    return { ...this.#preferences };
+    return {
+      ...this.#preferences,
+      biomeTargets: [...this.#preferences.biomeTargets],
+    };
+  }
+  startJoinCooldown(serverId, at = Date.now()) {
+    this.#autoJoinCooldownStartedAt = at;
+    this.#autoJoinCooldownUntil = at + AUTO_JOIN_COOLDOWN_MS;
+    this.#autoJoinCooldownServerId = serverId;
   }
   async save(value) {
     const next = validate(value);
@@ -77,6 +113,7 @@ export class Notifications {
       });
       await rename(temporary, this.path);
       this.#preferences = next;
+      this.onPreferencesChanged(this.preferences);
       // Changing preferences never replays already-active signals.
       this.#pending = [];
       return this.preferences;
@@ -91,6 +128,22 @@ export class Notifications {
     }
   }
   update(snapshot) {
+    const completedAutoStart =
+      this.#autoJoinCooldownUntil > snapshot.now &&
+      snapshot.automation?.lastAutoStartAt >= this.#autoJoinCooldownStartedAt &&
+      snapshot.automation?.biomeAt > snapshot.automation?.lastAutoStartAt;
+    if (this.#autoJoinCooldownUntil <= snapshot.now || completedAutoStart) {
+      this.#autoJoinCooldownStartedAt = 0;
+      this.#autoJoinCooldownUntil = 0;
+      this.#autoJoinCooldownServerId = null;
+    }
+    const autoJoinCoolingDown = this.#autoJoinCooldownUntil > snapshot.now;
+    const detectedBiome = snapshot.automation?.biome ?? null;
+    const targetBiome = this.#preferences.autoJoin
+      ? this.#preferences.biomeTargets.find(
+          (biome) => normalizeBiome(biome) === normalizeBiome(detectedBiome),
+        )
+      : null;
     const poll = snapshot.events[0]?.id ?? 0;
     if (poll !== this.#poll) {
       this.#poll = poll;
@@ -124,6 +177,9 @@ export class Notifications {
           if (
             this.#preferences.autoJoin &&
             autoJoinTypeEnabled &&
+            row.id !== snapshot.currentServerId &&
+            !targetBiome &&
+            !autoJoinCoolingDown &&
             !episode.autoJoined
           )
             autoJoinCandidates.push({ row, episode });
@@ -144,12 +200,24 @@ export class Notifications {
         compareSignals(a.row, b.row),
       )[0];
       if (selected) {
+        const cooldownStartedAt = snapshot.now;
+        this.startJoinCooldown(selected.row.id, cooldownStartedAt);
         selected.episode.autoJoined = true;
         const stored = this.#episodes.get(selected.row.id);
         if (stored) stored.autoJoined = true;
-        Promise.resolve(
-          this.onAutoJoin(eventFor(selected.row, snapshot)),
-        ).catch(() => {});
+        Promise.resolve(this.onAutoJoin(eventFor(selected.row, snapshot)))
+          .then((launched) => {
+            if (
+              launched === false &&
+              this.#autoJoinCooldownServerId === selected.row.id &&
+              this.#autoJoinCooldownStartedAt === cooldownStartedAt
+            ) {
+              this.#autoJoinCooldownStartedAt = 0;
+              this.#autoJoinCooldownUntil = 0;
+              this.#autoJoinCooldownServerId = null;
+            }
+          })
+          .catch(() => {});
       }
     }
     // Revalidate on every heartbeat AND immediately before claim. A held card is
@@ -176,7 +244,18 @@ export class Notifications {
       })
       .sort(compareSignals)
       .slice(0, 100);
-    return { preferences: this.preferences, pending: this.#pending.length };
+    return {
+      preferences: this.preferences,
+      pending: this.#pending.length,
+      autoJoinPausedBiome: targetBiome ?? null,
+      autoJoinCooldownUntil: autoJoinCoolingDown
+        ? this.#autoJoinCooldownUntil
+        : null,
+      autoJoinCooldownServerId: autoJoinCoolingDown
+        ? this.#autoJoinCooldownServerId
+        : null,
+      currentServerId: snapshot.currentServerId ?? null,
+    };
   }
   claim() {
     // Synchronous, process-wide consumption prevents duplicate alerts across browser tabs.

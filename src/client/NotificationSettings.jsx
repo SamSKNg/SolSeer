@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Bell } from "lucide-react";
 import { DEFAULT_NOTIFICATIONS } from "../shared/notifications.js";
+import { BIOMES } from "../shared/biomes.js";
 import { notificationPermission } from "./useNotifications.js";
 
 export function NotificationSettings({ initial, token, ready }) {
@@ -214,6 +215,75 @@ export function NotificationSettings({ initial, token, ready }) {
           />
           Auto-join rapid filling (includes full queues)
         </label>
+        <div className="settings-divider" aria-hidden="true" />
+        <h3>Fullscreen OCR and biome targets</h3>
+        <p className="subtle">
+          Biome OCR always reads a fixed region of a foreground, maximized
+          Roblox window. Auto-Start additionally clicks Play after two fuzzy OCR
+          matches. If the detected biome is selected below, automatic server
+          joins pause until that target is no longer detected.
+        </p>
+        <div
+          className="resolution-options"
+          role="group"
+          aria-label="OCR resolution"
+        >
+          <label className="settings-consent">
+            <input
+              type="radio"
+              name="ocr-resolution"
+              value="1440p"
+              checked={preferences.ocrResolution === "1440p"}
+              disabled={!ready || busy}
+              onChange={() =>
+                setPreferences({ ...preferences, ocrResolution: "1440p" })
+              }
+            />
+            2560 × 1440
+          </label>
+          <label className="settings-consent">
+            <input
+              type="radio"
+              name="ocr-resolution"
+              value="1080p"
+              checked={preferences.ocrResolution === "1080p"}
+              disabled={!ready || busy}
+              onChange={() =>
+                setPreferences({ ...preferences, ocrResolution: "1080p" })
+              }
+            />
+            1920 × 1080
+          </label>
+        </div>
+        <fieldset className="biome-targets">
+          <legend>Biomes that pause auto-join</legend>
+          <p className="subtle">
+            No targets are selected by default. Matching is case-insensitive and
+            allows small OCR errors.
+          </p>
+          <div className="biome-target-grid">
+            {BIOMES.map((biome) => (
+              <label className="settings-consent" key={biome}>
+                <input
+                  type="checkbox"
+                  checked={preferences.biomeTargets.includes(biome)}
+                  disabled={!ready || busy}
+                  onChange={(event) =>
+                    setPreferences({
+                      ...preferences,
+                      biomeTargets: event.target.checked
+                        ? [...preferences.biomeTargets, biome]
+                        : preferences.biomeTargets.filter(
+                            (item) => item !== biome,
+                          ),
+                    })
+                  }
+                />
+                {biome}
+              </label>
+            ))}
+          </div>
+        </fieldset>
         <div className="settings-actions">
           {permission === "default" && (
             <button type="button" onClick={allow}>

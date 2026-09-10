@@ -21,11 +21,12 @@ const record = (counts) => ({
   })),
 });
 
-test("authenticated startup and reconfiguration share 3s/40 two-page settings; anonymous stays 20.5s/3", () => {
+test("authenticated polling uses one top page every 2s; anonymous keeps its discovery rotation", () => {
   assert.deepEqual(pollingFor(true), {
-    interval: 3000,
+    interval: 2000,
     requestLimit: 40,
-    pagesPerPoll: 2,
+    pagesPerPoll: 1,
+    coverageEvery: 0,
   });
   assert.equal(pollingFor(true), AUTHENTICATED_POLLING);
   assert.equal(pollingFor(false), ANONYMOUS_POLLING);
@@ -33,10 +34,11 @@ test("authenticated startup and reconfiguration share 3s/40 two-page settings; a
     interval: 20500,
     requestLimit: 3,
     pagesPerPoll: 1,
+    coverageEvery: 3,
   });
 });
 
-test("3s polling preserves the 15.5s burst window, not a fixed number of samples", () => {
+test("burst detection uses elapsed time rather than a fixed sample count", () => {
   const early = score(record([11, 11, 11, 12, 12, 13]));
   assert.equal(early.alert, "potential");
   assert.equal(early.growth15s, 2);

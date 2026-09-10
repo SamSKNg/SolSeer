@@ -90,6 +90,36 @@
   margin-top: 28px;
   background: #ffffff24;
 }
+.resolution-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+}
+.resolution-options .settings-consent {
+  margin: 12px 0;
+}
+.disabled-option {
+  opacity: 0.45;
+}
+.biome-targets {
+  min-width: 0;
+  margin: 22px 0 28px;
+  padding: 18px;
+  border: 1px solid #ffffff24;
+}
+.biome-targets legend {
+  padding: 0 8px;
+  color: #eeeee6;
+  font-size: 13px;
+}
+.biome-target-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2px 16px;
+}
+.biome-target-grid .settings-consent {
+  margin: 7px 0;
+}
 .settings-actions {
   display: flex;
   flex-wrap: wrap;
@@ -207,6 +237,9 @@
   }
 }
 @media (max-width: 480px) {
+  .biome-target-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
   .cookie-status {
     padding: 16px;
     gap: 12px;

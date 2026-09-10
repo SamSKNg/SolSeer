@@ -14,25 +14,16 @@ export function createRobloxFetch(cookie = "", fetchFn = fetch) {
       "Invalid ROBLOX_SECURITY_COOKIE: supply only the cookie value, without quotes, whitespace, or additional cookies.",
     );
   }
-  const request = async (input, options = {}) => {
-    const url = new URL(input);
-    if (
-      url.origin !== "https://games.roblox.com" ||
-      url.username ||
-      url.password ||
-      !/^\/v1\/games\/\d+\/servers\/Public$/.test(url.pathname) ||
-      (options.method && options.method !== "GET")
-    )
-      throw new Error(
-        "Blocked request outside the Roblox public-server endpoint",
-      );
+  const perform = async (url, { method = "GET", body, signal } = {}) => {
     const headers = new Headers();
     headers.set("Accept", "application/json");
+    if (body !== undefined) headers.set("Content-Type", "application/json");
     if (cookie) headers.set("Cookie", `.ROBLOSECURITY=${cookie}`);
     try {
       return await fetchFn(url.href, {
-        method: "GET",
-        signal: options.signal,
+        method,
+        body,
+        signal,
         headers,
         // Never forward session credentials to a redirect destination.
         redirect: "error",
@@ -46,7 +37,50 @@ export function createRobloxFetch(cookie = "", fetchFn = fetch) {
       );
     }
   };
-  Object.defineProperty(request, "hasCookie", { value: Boolean(cookie) });
+  const request = async (input, options = {}) => {
+    const url = new URL(input);
+    if (
+      url.origin !== "https://games.roblox.com" ||
+      url.username ||
+      url.password ||
+      !/^\/v1\/games\/\d+\/servers\/Public$/.test(url.pathname) ||
+      (options.method && options.method !== "GET")
+    )
+      throw new Error(
+        "Blocked request outside the Roblox public-server endpoint",
+      );
+    return perform(url, { method: "GET", signal: options.signal });
+  };
+  Object.defineProperties(request, {
+    hasCookie: { value: Boolean(cookie) },
+    authenticatedUser: {
+      value: ({ signal } = {}) => {
+        if (!cookie)
+          throw new Error("Roblox account tracking requires a cookie.");
+        return perform(
+          new URL("https://users.roblox.com/v1/users/authenticated"),
+          {
+            method: "GET",
+            signal,
+          },
+        );
+      },
+    },
+    userPresence: {
+      value: (userId, { signal } = {}) => {
+        if (!cookie || !Number.isSafeInteger(userId) || userId < 1)
+          throw new Error("Roblox account presence is unavailable.");
+        return perform(
+          new URL("https://presence.roblox.com/v1/presence/users"),
+          {
+            method: "POST",
+            body: JSON.stringify({ userIds: [userId] }),
+            signal,
+          },
+        );
+      },
+    },
+  });
   return request;
 }
 

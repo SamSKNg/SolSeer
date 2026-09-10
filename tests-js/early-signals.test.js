@@ -234,7 +234,7 @@ test("other-page polls, errors and heartbeats cannot supply a stale server's sec
     await poll();
     assert.equal((await poll()).alert, "potential");
     now = 1023001; // Old poll-based hold is still active after the long pause.
-    assert.equal(tracker.snapshot().rows[0].isFresh, false);
+    assert.deepEqual(tracker.snapshot().rows, []);
     const returned = await poll();
     assert.equal(returned.alert, "warmup");
     assert.equal(returned.awaitingFreshSample, true);

@@ -99,9 +99,9 @@ test(
       );
       const snapshot = await (await fetch(base + "/api/snapshot")).json();
       assert.equal(snapshot.totalJoins, 1);
-      assert.equal(snapshot.pollIntervalMs, 3000);
+      assert.equal(snapshot.pollIntervalMs, 2000);
       assert.equal(snapshot.requestLimit, 40);
-      assert.equal(snapshot.pagesPerPoll, 2);
+      assert.equal(snapshot.pagesPerPoll, 1);
       assert.equal(snapshot.minimumPlayers, 13);
       assert.ok(
         !JSON.stringify(snapshot).includes("synthetic-http-test-cookie"),
@@ -225,6 +225,9 @@ test(
         autoJoin: false,
         autoJoinPotential: true,
         autoJoinCluster: false,
+        autoStart: false,
+        ocrResolution: "1440p",
+        biomeTargets: [],
       };
       const cookieFile = await readFile(join(configDir, ".env"), "utf8");
       const notificationSave = await fetch(base + "/api/settings", {

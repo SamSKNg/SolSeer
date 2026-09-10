@@ -14,6 +14,9 @@ const enabled = {
   autoJoin: false,
   autoJoinPotential: true,
   autoJoinCluster: true,
+  autoStart: false,
+  ocrResolution: "1440p",
+  biomeTargets: [],
 };
 const row = (alert = "potential", id = "server") => ({
   id,
@@ -97,8 +100,18 @@ test("notification preferences persist independently, validate input and default
       autoJoin: false,
       autoJoinPotential: true,
       autoJoinCluster: true,
+      autoStart: false,
+      ocrResolution: "1440p",
+      biomeTargets: [],
     });
-    for (const value of [null, {}, { ...enabled, enabled: "true" }])
+    for (const value of [
+      null,
+      {},
+      { ...enabled, enabled: "true" },
+      { ...enabled, ocrResolution: "720p" },
+      { ...enabled, biomeTargets: ["Not a biome"] },
+      { ...enabled, biomeTargets: ["Aurora", "aurora"] },
+    ])
       await assert.rejects(notifications.save(value), { status: 400 });
     await writeFile(notifications.path, "invalid JSON");
     assert.equal(new Notifications(folder).preferences.enabled, false);
@@ -297,7 +310,7 @@ test("auto-join selects one strongest new signal and runs once per episode", () 
     );
     notifications.update(sample(4, []));
     notifications.update(sample(5, []));
-    notifications.update(sample(6, [row("potential", "rapid")]));
+    notifications.update(sample(6, [row("potential", "rapid")], 70000));
     assert.deepEqual(
       joined.map((event) => event.id),
       ["rapid", "rapid"],
@@ -357,7 +370,77 @@ test("auto-join has independent early and rapid signal selectors", () =>
       autoJoinCluster: false,
     });
     notifications.update(
-      sample(4, [row("potential", "early"), row("cluster", "rapid")]),
+      sample(4, [row("potential", "early"), row("cluster", "rapid")], 70000),
     );
     assert.deepEqual(joined, ["rapid", "early"]);
+  }));
+
+test("auto-join excludes the account's current server and chooses the next signal", () =>
+  fixture(async (_notifications, folder) => {
+    const joined = [];
+    const notifications = new Notifications(folder, {
+      onAutoJoin: (event) => joined.push(event.id),
+    });
+    await notifications.save({ ...enabled, autoJoin: true });
+    notifications.update({
+      ...sample(1, [
+        row("cluster", "current-job"),
+        row("potential", "other-job"),
+      ]),
+      currentServerId: "current-job",
+    });
+    assert.deepEqual(joined, ["other-job"]);
+  }));
+
+test("a selected OCR target biome vetoes automatic joins", () =>
+  fixture(async (_notifications, folder) => {
+    const joined = [];
+    const notifications = new Notifications(folder, {
+      onAutoJoin: (event) => joined.push(event.id),
+    });
+    await notifications.save({
+      ...enabled,
+      autoJoin: true,
+      autoStart: true,
+      biomeTargets: ["Glitched", "Dreamspace"],
+    });
+    const result = notifications.update({
+      ...sample(1, [row("cluster", "rare-signal")]),
+      automation: { biome: "Glitched", biomeFresh: true },
+    });
+    assert.deepEqual(joined, []);
+    assert.equal(result.autoJoinPausedBiome, "Glitched");
+  }));
+
+test("join cooldown blocks another auto-join until startup completes or sixty seconds pass", () =>
+  fixture(async (_notifications, folder) => {
+    const joined = [];
+    const notifications = new Notifications(folder, {
+      onAutoJoin: (event) => joined.push(event.id),
+    });
+    await notifications.save({ ...enabled, autoJoin: true, autoStart: true });
+    const first = notifications.update(
+      sample(1, [row("cluster", "first")], 1000),
+    );
+    assert.deepEqual(joined, ["first"]);
+
+    const cooling = notifications.update(
+      sample(2, [row("cluster", "second")], 3000),
+    );
+    assert.deepEqual(joined, ["first"]);
+    assert.equal(cooling.autoJoinCooldownUntil, 61000);
+    assert.equal(cooling.autoJoinCooldownServerId, "first");
+
+    notifications.update({
+      ...sample(3, [row("cluster", "third")], 7000),
+      automation: {
+        lastAutoStartAt: 5000,
+        biomeAt: 6500,
+        biome: "Normal",
+      },
+    });
+    assert.deepEqual(joined, ["first", "third"]);
+
+    notifications.update(sample(4, [row("cluster", "fourth")], 68000));
+    assert.deepEqual(joined, ["first", "third", "fourth"]);
   }));

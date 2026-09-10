@@ -31,7 +31,7 @@ export async function runPollingProbe({
   wait = sleep,
   report = console.log,
 }) {
-  // Let previous traffic expire so this is an isolated three-second trial.
+  // Let previous traffic expire so this is an isolated two-second trial.
   let initialWait;
   while ((initialWait = store.availableIn(now(), 1)) > 0) {
     report(

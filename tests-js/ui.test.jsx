@@ -24,32 +24,32 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-test("two-page activity counts API attempts separately from cycles and shows partial updates", () => {
+test("activity reports one-page two-second authenticated polling", () => {
   vi.stubGlobal("EventSource", FakeEventSource);
   const { container } = render(<App />);
   act(() =>
     feed.onmessage({
       data: JSON.stringify({
         now: 1000000,
-        nextAt: 1003000,
+        nextAt: 1002000,
         lastAt: 1000000,
         rows: [],
         joins: [],
         polls: 20,
-        totalRequests: 40,
-        budget: 40,
+        totalRequests: 20,
+        budget: 20,
         requestLimit: 40,
-        pollIntervalMs: 3000,
-        pagesPerPoll: 2,
+        pollIntervalMs: 2000,
+        pagesPerPoll: 1,
         tracked: 100,
         totalJoins: 0,
         events: [
           {
             id: 20,
             at: 1000000,
-            page: "Pages 1 + 2",
-            requests: 2,
-            partial: true,
+            page: "Top 100",
+            requests: 1,
+            partial: false,
             count: 100,
             duration: 120,
             error: "Roblox HTTP 429",
@@ -58,22 +58,18 @@ test("two-page activity counts API attempts separately from cycles and shows par
       }),
     }),
   );
-  expect(screen.getByText("40/40")).toBeTruthy();
+  expect(screen.getByText("20/40")).toBeTruthy();
   expect(
-    screen.getByText(/3s polling.*up to 2 page\(s\) per cycle/),
+    screen.getByText(/2s polling.*up to 1 page\(s\) per cycle/),
   ).toBeTruthy();
   expect(
     screen.getByText("API requests").closest(".metric").textContent,
-  ).toContain("40");
+  ).toContain("20");
   fireEvent.click(screen.getByRole("button", { name: /Poll activity/ }));
   expect(screen.getByText("Latest 100 poll cycles")).toBeTruthy();
   expect(container.querySelectorAll(".timeline .event")).toHaveLength(1);
-  expect(screen.getByText("Pages 1 + 2")).toBeTruthy();
-  expect(
-    screen.getByText(
-      /2 API request\(s\).*partial update: 100 servers refreshed/,
-    ),
-  ).toBeTruthy();
+  expect(screen.getByText("Top 100")).toBeTruthy();
+  expect(screen.getByText(/1 API request\(s\)/)).toBeTruthy();
   expect(screen.getByText("Roblox HTTP 429")).toBeTruthy();
 });
 
@@ -121,7 +117,7 @@ test("signal view switch shows all ranked cards, preserves identity on updates, 
   ).toBe(`/api/join/${rows[0].id}`);
   expect(
     within(cards()[1])
-      .getByRole("button", { name: "Rejoin" })
+      .getByRole("button", { name: "Join again" })
       .closest("form")
       .getAttribute("action"),
   ).toBe(`/api/join/${rows[1].id}`);
@@ -472,7 +468,7 @@ test("live feed drives candidates, detail chart, filters, joins, history and rec
   expect(
     within(
       screen.getByRole("region", { name: "Cluster candidates" }),
-    ).getByRole("button", { name: "Rejoin" }),
+    ).getByRole("button", { name: "Join again" }),
   ).toBeTruthy();
   fireEvent.click(screen.getByLabelText("Hide joined"));
   expect(screen.getByText("No servers match these filters.")).toBeTruthy();
@@ -510,10 +506,14 @@ const sendRows = (
       autoJoin: false,
       autoJoinPotential: true,
       autoJoinCluster: true,
+      autoStart: false,
+      ocrResolution: "1440p",
+      biomeTargets: [],
     },
     pending: 0,
   },
   joins = [],
+  extra = {},
 ) =>
   act(() =>
     feed.onmessage({
@@ -529,11 +529,12 @@ const sendRows = (
         joins,
         events: [],
         notifications,
+        ...extra,
       }),
     }),
   );
 
-test("auto-join is toggleable beside Signals to watch and saves the shared preference", async () => {
+test("auto-join is toggleable below Signals to watch and saves the shared preference", async () => {
   vi.stubGlobal("EventSource", FakeEventSource);
   const preferences = {
     enabled: false,
@@ -542,6 +543,9 @@ test("auto-join is toggleable beside Signals to watch and saves the shared prefe
     autoJoin: false,
     autoJoinPotential: true,
     autoJoinCluster: true,
+    autoStart: false,
+    ocrResolution: "1440p",
+    biomeTargets: [],
   };
   const fetchMock = vi
     .fn()
@@ -558,10 +562,10 @@ test("auto-join is toggleable beside Signals to watch and saves the shared prefe
   vi.stubGlobal("fetch", fetchMock);
   render(<App />);
   sendRows([], 1, { preferences, pending: 0 });
-  const heading = screen
+  const signalHeader = screen
     .getByRole("heading", { name: /Signals to watch/ })
-    .closest(".signal-section-heading");
-  const toggle = within(heading).getByRole("button", {
+    .closest(".signal-section-header");
+  const toggle = within(signalHeader).getByRole("button", {
     name: "Auto-join Off",
   });
   expect(toggle.getAttribute("aria-pressed")).toBe("false");
@@ -581,6 +585,69 @@ test("auto-join is toggleable beside Signals to watch and saves the shared prefe
   expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({
     notifications: { ...preferences, autoJoin: true },
   });
+});
+
+test("Auto-Start requires the fullscreen warning and saves beside auto-join", async () => {
+  vi.stubGlobal("EventSource", FakeEventSource);
+  const confirm = vi.fn(() => true);
+  vi.stubGlobal("confirm", confirm);
+  const preferences = {
+    enabled: false,
+    potential: true,
+    cluster: true,
+    autoJoin: false,
+    autoJoinPotential: true,
+    autoJoinCluster: true,
+    autoStart: false,
+    ocrResolution: "1440p",
+    biomeTargets: ["Glitched"],
+  };
+  const fetchMock = vi
+    .fn()
+    .mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ token: "safe-token", notifications: preferences }),
+    })
+    .mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        notifications: { ...preferences, autoStart: true },
+      }),
+    });
+  vi.stubGlobal("fetch", fetchMock);
+  render(<App />);
+  sendRows([], 1, { preferences, pending: 0 });
+  fireEvent.click(screen.getByRole("button", { name: "Auto-Start Off" }));
+  expect(confirm).toHaveBeenCalledWith(expect.stringMatching(/maximized/));
+  await screen.findByRole("button", { name: "Auto-Start On" });
+  expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({
+    notifications: { ...preferences, autoStart: true },
+  });
+});
+
+test("the exact current server is marked and cannot be joined again", () => {
+  vi.stubGlobal("EventSource", FakeEventSource);
+  render(<App />);
+  const current = sampleRow(1, {
+    alert: "potential",
+    isFresh: true,
+    notificationEligible: true,
+    isCurrentServer: true,
+  });
+  sendRows([current], 1, undefined, [], {
+    currentServerId: current.id,
+    presence: { serverId: current.id, username: "Seer" },
+    automation: { biome: "Glitched", biomeFresh: false },
+  });
+  const card = screen.getByRole("region", { name: "Current Roblox server" });
+  expect(within(card).getByText("Seer")).toBeTruthy();
+  expect(within(card).getByText("Glitched")).toBeTruthy();
+  expect(within(card).getByText(/last detected biome/)).toBeTruthy();
+  expect(card.style.getPropertyValue("--biome-color")).toBe("#fa5cdd");
+  expect(screen.getAllByText(/You are here/).length).toBeGreaterThan(0);
+  expect(screen.getByRole("button", { name: "Current server" }).disabled).toBe(
+    true,
+  );
 });
 
 test("join history records a rare or not-rare biome outcome", async () => {

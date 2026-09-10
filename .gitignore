@@ -6,6 +6,7 @@ __pycache__/
 .data/
 node_modules/
 dist/
+native/
 *.log
 .env
 .env.*

@@ -90,6 +90,50 @@ test("cookie is optional, server-only, GET-only and never forwarded through redi
   }
 });
 
+test("account identity and presence use only fixed Roblox endpoints", async () => {
+  const seen = [];
+  const request = createRobloxFetch(dummy, async (url, options) => {
+    seen.push({ url, options });
+    return new Response(
+      url.includes("presence")
+        ? '{"userPresences":[]}'
+        : '{"id":42,"name":"Seer"}',
+    );
+  });
+  await request.authenticatedUser();
+  await request.userPresence(42);
+  assert.deepEqual(
+    seen.map(({ url, options }) => ({
+      url,
+      method: options.method,
+      cookie: options.headers.get("cookie"),
+      body: options.body ?? null,
+      redirect: options.redirect,
+    })),
+    [
+      {
+        url: "https://users.roblox.com/v1/users/authenticated",
+        method: "GET",
+        cookie: `.ROBLOSECURITY=${dummy}`,
+        body: null,
+        redirect: "error",
+      },
+      {
+        url: "https://presence.roblox.com/v1/presence/users",
+        method: "POST",
+        cookie: `.ROBLOSECURITY=${dummy}`,
+        body: '{"userIds":[42]}',
+        redirect: "error",
+      },
+    ],
+  );
+  assert.throws(() => request.userPresence(0), /unavailable/);
+  assert.throws(
+    () => createRobloxFetch("").authenticatedUser(),
+    /requires a cookie/,
+  );
+});
+
 test("configuration consumes the environment secret and rejects header injection without echo", () => {
   const env = { ROBLOX_SECURITY_COOKIE: dummy };
   configuredRobloxFetch(env);
