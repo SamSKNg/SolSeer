@@ -18,7 +18,7 @@ export function showNotification(events, inspect) {
       .slice(0, 3)
       .map(
         (event) =>
-          `${event.alert === "cluster" ? "Rapid filling" : "Early lead"}: ${event.id.slice(0, 8)} · ${event.players}/${event.capacity} players · ${Math.max(0, event.capacity - event.players)} open slots${event.reason ? ` · ${event.reason}` : ""}`,
+          `${event.alert === "cluster" ? "Rapid filling" : "Early lead"}: ${event.id.slice(0, 8)} · ${event.players}/${event.capacity} players · ${event.players >= event.capacity ? "full queue" : `${Math.max(0, event.capacity - event.players)} open slots`}${event.reason ? ` · ${event.reason}` : ""}`,
       )
       .join(
         "\n",

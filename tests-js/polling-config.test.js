@@ -36,12 +36,13 @@ test("authenticated startup and reconfiguration share 3s/40 two-page settings; a
   });
 });
 
-test("3s polling preserves 15s early and 10s rapid windows, not a fixed number of samples", () => {
+test("3s polling preserves the 15.5s burst window, not a fixed number of samples", () => {
   const early = score(record([11, 11, 11, 12, 12, 13]));
   assert.equal(early.alert, "potential");
   assert.equal(early.growth15s, 2);
   assert.equal(score(record([13, 14, 15, 16])).alert, "cluster"); // +3 / 9s
-  assert.equal(score(record([13, 14, 15, 15, 16])).alert, "potential"); // +3 / 12s
+  assert.equal(score(record([13, 14, 15, 15, 16])).alert, "cluster"); // +3 / 12s
+  assert.equal(score(record([13, 14, 15, 15, 15, 15, 16])).alert, "potential"); // Only +2 remains inside the last 15.5s.
   const stale = record([13, 15]);
   assert.equal(score(stale, 2, stale.lastSeen + 20000).isFresh, true);
   assert.equal(score(stale, 2, stale.lastSeen + 20001).isFresh, false);

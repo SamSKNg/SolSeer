@@ -1,5 +1,30 @@
 // One store per backend session. No filesystem, SQLite, or browser storage.
 import { AUTHENTICATED_POLLING } from "./polling-config.js";
+import { randomUUID } from "node:crypto";
+
+export const BIOME_OUTCOMES = Object.freeze(["rare", "not_rare"]);
+
+const observations = (row) =>
+  (row.history ?? []).slice(-120).map(({ at, players, capacity, poll }) => ({
+    at,
+    players,
+    capacity: capacity ?? row.capacity ?? null,
+    poll: poll ?? null,
+  }));
+
+const signalEvidence = (row) => ({
+  deltaPoll: row.deltaPoll ?? null,
+  growth15s: row.growth15s ?? null,
+  growth10s: row.growth10s ?? null,
+  growthWindowMs: row.growthWindowMs ?? null,
+  growthPer10s: row.growthPer10s ?? null,
+  followUpConfirmed: row.followUpConfirmed ?? false,
+  burstGainRetained: row.burstGainRetained ?? null,
+  burstGain: row.burstMemory?.gain ?? null,
+  openSlots: row.openSlots ?? null,
+  peerGrowth: row.peerGrowth ?? null,
+  reasons: Array.isArray(row.reasons) ? [...row.reasons] : [],
+});
 
 export class Store {
   #history = [];
@@ -9,8 +34,9 @@ export class Store {
   #nextId = 1;
 
   join(row, now = Date.now()) {
-    this.#history.push({
+    const entry = {
       id: this.#nextId++,
+      feedbackId: randomUUID(),
       jobId: row.id,
       at: now,
       players: row.players ?? null,
@@ -18,7 +44,15 @@ export class Store {
       alert: row.alert ?? null,
       signalState: row.signalState ?? null,
       growthPer10s: row.growthPer10s ?? null,
+      outcome: null,
+    };
+    Object.defineProperty(entry, "joinObservations", {
+      value: observations(row),
     });
+    Object.defineProperty(entry, "joinSignal", {
+      value: signalEvidence(row),
+    });
+    this.#history.push(entry);
     this.#history.sort((a, b) => b.at - a.at || b.id - a.id);
     this.#history = this.#history.slice(0, 200);
     const previous = this.#joined.get(row.id);
@@ -26,6 +60,7 @@ export class Store {
       count: (previous?.count ?? 0) + 1,
       at: Math.max(previous?.at ?? now, now),
     });
+    return { ...entry };
   }
   joins() {
     return this.#history.map((row) => ({ ...row }));
@@ -34,6 +69,40 @@ export class Store {
     return Object.fromEntries(
       [...this.#joined].map(([id, value]) => [id, { ...value }]),
     );
+  }
+  feedbackExample(id, outcome, current, now = Date.now()) {
+    if (outcome !== null && !BIOME_OUTCOMES.includes(outcome))
+      throw Object.assign(new Error("Invalid biome outcome."), { status: 400 });
+    const entry = this.#history.find((row) => row.id === id);
+    if (!entry)
+      throw Object.assign(new Error("Join attempt was not found."), {
+        status: 404,
+      });
+    return {
+      feedbackId: entry.feedbackId,
+      outcome,
+      labeledAt: now,
+      join: {
+        jobId: entry.jobId,
+        at: entry.at,
+        players: entry.players,
+        capacity: entry.capacity,
+        alert: entry.alert,
+        signalState: entry.signalState,
+        growthPer10s: entry.growthPer10s,
+      },
+      signal: entry.joinSignal,
+      observations: current ? observations(current) : entry.joinObservations,
+    };
+  }
+  setJoinOutcome(id, outcome) {
+    const entry = this.#history.find((row) => row.id === id);
+    if (!entry)
+      throw Object.assign(new Error("Join attempt was not found."), {
+        status: 404,
+      });
+    entry.outcome = outcome;
+    return { ...entry };
   }
   requests(now) {
     this.#attempts = this.#attempts.filter((at) => at > now - 60000);

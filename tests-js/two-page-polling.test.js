@@ -199,7 +199,7 @@ test("authentication failures downgrade to anonymous one-page polling even on pa
   }
 });
 
-test("two pages are one completed heuristic poll; in-flight page 2 cannot consume removal grace", async () => {
+test("two pages are one completed heuristic poll; in-flight page 2 cannot invent burst loss", async () => {
   let players = 13,
     finish;
   const f = fixture((cursor, call) => {
@@ -225,8 +225,8 @@ test("two pages are one completed heuristic poll; in-flight page 2 cannot consum
     finish(page([]));
     const dropped = await pending;
     assert.equal(dropped.polls, 3);
-    assert.equal(dropped.rows[0].signalState, "declining");
-    assert.equal(dropped.rows[0].burstMemory.removeAtPoll, 4);
+    assert.equal(dropped.rows[0].signalState, "holding");
+    players = 14;
     const removed = await f.poll();
     assert.equal(removed.rows[0].alert, "watch");
     assert.equal(removed.rows[0].history.length, 4);

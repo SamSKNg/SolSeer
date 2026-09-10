@@ -9,6 +9,9 @@ import { LocalSettings } from "./local-settings.js";
 import { EventStreams } from "./event-streams.js";
 import { Notifications } from "./notifications.js";
 import { pollingFor } from "./polling-config.js";
+import { launchRoblox } from "./auto-join.js";
+import { FeedbackCollector } from "./feedback.js";
+import { joinUrl } from "../shared/roblox-links.js";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const dev = process.argv.includes("--dev");
@@ -21,13 +24,21 @@ try {
   process.exit(1);
 }
 const store = new Store();
+const feedback = new FeedbackCollector(settings.directory);
 const robloxFetch = settings.request;
 const settingsToken = randomBytes(32).toString("hex");
 const tracker = new Tracker(store, {
   fetchFn: robloxFetch,
   ...pollingFor(robloxFetch.hasCookie),
 });
-const notifications = new Notifications(settings.directory);
+const notifications = new Notifications(settings.directory, {
+  onAutoJoin: async ({ id }) => {
+    const launched = await launchRoblox(joinUrl(id), {
+      onError: () => console.error("Unable to launch Roblox automatically."),
+    });
+    if (launched) tracker.recordJoin(id);
+  },
+});
 const snapshot = () => {
   const value = tracker.snapshot();
   return { ...value, notifications: notifications.update(value) };
@@ -68,7 +79,13 @@ const server = http.createServer(async (req, res) => {
     // Keep same-origin form POST origins usable; disclose no referrer to Roblox.
     res.setHeader("Referrer-Policy", "same-origin");
     res.setHeader("X-Frame-Options", "DENY");
-    if (["/api/settings", "/api/notifications/claim"].includes(url.pathname)) {
+    const feedbackRoute = url.pathname.match(
+      /^\/api\/joins\/([1-9]\d*)\/outcome$/,
+    );
+    if (
+      ["/api/settings", "/api/notifications/claim"].includes(url.pathname) ||
+      feedbackRoute
+    ) {
       res.setHeader("Content-Type", "application/json");
       if (req.method === "GET" && url.pathname === "/api/settings") {
         res.end(
@@ -117,9 +134,28 @@ const server = http.createServer(async (req, res) => {
         try {
           payload = JSON.parse(body);
         } catch {
-          throw Object.assign(new Error("Invalid settings request."), {
+          throw Object.assign(new Error("Invalid JSON request."), {
             status: 400,
           });
+        }
+        if (feedbackRoute) {
+          if (!Object.hasOwn(payload ?? {}, "outcome"))
+            throw Object.assign(new Error("Choose a biome outcome."), {
+              status: 400,
+            });
+          const id = Number(feedbackRoute[1]);
+          const example = store.feedbackExample(
+            id,
+            payload?.outcome ?? null,
+            tracker.records.get(
+              store.joins().find((entry) => entry.id === id)?.jobId,
+            ),
+          );
+          await feedback.save(example);
+          const join = store.setJoinOutcome(id, example.outcome);
+          res.end(JSON.stringify({ join }));
+          broadcast();
+          return;
         }
         if (payload?.notifications !== undefined) {
           if (Object.hasOwn(payload, "cookie"))
@@ -148,7 +184,11 @@ const server = http.createServer(async (req, res) => {
       } catch (error) {
         res.writeHead(error.status || 500).end(
           JSON.stringify({
-            error: error.status ? error.message : "Unable to update settings.",
+            error: error.status
+              ? error.message
+              : feedbackRoute
+                ? "Unable to save biome feedback."
+                : "Unable to update settings.",
           }),
         );
       }

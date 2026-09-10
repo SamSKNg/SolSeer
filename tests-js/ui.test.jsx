@@ -7,6 +7,7 @@ import {
   act,
   cleanup,
   within,
+  waitFor,
 } from "@testing-library/react";
 import { App } from "../src/client/App.jsx";
 
@@ -233,7 +234,7 @@ test("signal cards sort descending by population, break ties by signal priority,
   );
 });
 
-test("holding bursts stay in the carousel with peer context but never appear as actionable notices", () => {
+test("holding bursts stay in the carousel and actionable notice while their gain is retained", () => {
   vi.stubGlobal("EventSource", FakeEventSource);
   render(<App />);
   const held = sampleRow(1, {
@@ -241,6 +242,7 @@ test("holding bursts stay in the carousel with peer context but never appear as 
     alert: "potential",
     signalState: "holding",
     notificationEligible: false,
+    noticeEligible: true,
     players: 17,
     deltaPoll: 0,
     burstMemory: { gain: 3 },
@@ -259,7 +261,7 @@ test("holding bursts stay in the carousel with peer context but never appear as 
   expect(
     within(candidates).getByText(/Growing faster than 80% of 25/),
   ).toBeTruthy();
-  expect(screen.queryByLabelText("Early lead notification")).toBeNull();
+  expect(screen.getByLabelText("Early lead notification")).toBeTruthy();
   expect(screen.queryByLabelText("Strong signal notification")).toBeNull();
   fireEvent.click(
     within(candidates).getByRole("button", { name: "Server held-bur" }),
@@ -462,7 +464,7 @@ test("live feed drives candidates, detail chart, filters, joins, history and rec
     }),
   );
   const marker = screen.getByText("Previously joined");
-  expect(marker.getAttribute("title")).toContain("1 recorded Join click(s)");
+  expect(marker.getAttribute("title")).toContain("1 recorded join attempt(s)");
   expect(marker.getAttribute("title")).toContain(
     "Arrival in Roblox is not confirmed",
   );
@@ -497,7 +499,22 @@ const sampleRow = (index, overrides = {}) => ({
   joined: null,
   ...overrides,
 });
-const sendRows = (rows, polls = 1) =>
+const sendRows = (
+  rows,
+  polls = 1,
+  notifications = {
+    preferences: {
+      enabled: false,
+      potential: true,
+      cluster: true,
+      autoJoin: false,
+      autoJoinPotential: true,
+      autoJoinCluster: true,
+    },
+    pending: 0,
+  },
+  joins = [],
+) =>
   act(() =>
     feed.onmessage({
       data: JSON.stringify({
@@ -508,12 +525,103 @@ const sendRows = (rows, polls = 1) =>
         polls,
         budget: 1,
         tracked: rows.length,
-        totalJoins: 0,
-        joins: [],
+        totalJoins: joins.length,
+        joins,
         events: [],
+        notifications,
       }),
     }),
   );
+
+test("auto-join is toggleable beside Signals to watch and saves the shared preference", async () => {
+  vi.stubGlobal("EventSource", FakeEventSource);
+  const preferences = {
+    enabled: false,
+    potential: true,
+    cluster: true,
+    autoJoin: false,
+    autoJoinPotential: true,
+    autoJoinCluster: true,
+  };
+  const fetchMock = vi
+    .fn()
+    .mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ token: "safe-token" }),
+    })
+    .mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        notifications: { ...preferences, autoJoin: true },
+      }),
+    });
+  vi.stubGlobal("fetch", fetchMock);
+  render(<App />);
+  sendRows([], 1, { preferences, pending: 0 });
+  const heading = screen
+    .getByRole("heading", { name: /Signals to watch/ })
+    .closest(".signal-section-heading");
+  const toggle = within(heading).getByRole("button", {
+    name: "Auto-join Off",
+  });
+  expect(toggle.getAttribute("aria-pressed")).toBe("false");
+  fireEvent.click(toggle);
+  await waitFor(() =>
+    expect(
+      screen
+        .getByRole("button", { name: "Auto-join On" })
+        .getAttribute("aria-pressed"),
+    ).toBe("true"),
+  );
+  expect(fetchMock).toHaveBeenCalledTimes(2);
+  expect(fetchMock.mock.calls[1][0]).toBe("/api/settings");
+  expect(fetchMock.mock.calls[1][1].headers["X-Solseer-Token"]).toBe(
+    "safe-token",
+  );
+  expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({
+    notifications: { ...preferences, autoJoin: true },
+  });
+});
+
+test("join history records a rare or not-rare biome outcome", async () => {
+  vi.stubGlobal("EventSource", FakeEventSource);
+  const join = {
+    id: 7,
+    jobId: "candidate-123",
+    at: 1000000,
+    players: 17,
+    capacity: 20,
+    alert: "cluster",
+    signalState: "growing",
+    growthPer10s: 6,
+    outcome: null,
+  };
+  const fetchMock = vi
+    .fn()
+    .mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ token: "safe-token" }),
+    })
+    .mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ join: { ...join, outcome: "rare" } }),
+    });
+  vi.stubGlobal("fetch", fetchMock);
+  render(<App />);
+  sendRows([], 1, undefined, [join]);
+  fireEvent.click(screen.getByRole("button", { name: /Join history/ }));
+  const outcome = screen.getByLabelText("Biome outcome for candidate-123");
+  fireEvent.change(outcome, { target: { value: "rare" } });
+  await waitFor(() => expect(outcome.value).toBe("rare"));
+  expect(fetchMock).toHaveBeenCalledTimes(2);
+  expect(fetchMock.mock.calls[1][0]).toBe("/api/joins/7/outcome");
+  expect(fetchMock.mock.calls[1][1].headers["X-Solseer-Token"]).toBe(
+    "safe-token",
+  );
+  expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({
+    outcome: "rare",
+  });
+});
 
 test("signal and detail share buttons copy a server link without marking it joined", async () => {
   vi.stubGlobal("EventSource", FakeEventSource);
@@ -698,7 +806,7 @@ test("an early lead surfaces immediately outside the carousel, and disappears fr
     within(notice).getByRole("button", { name: "Inspect signal" }),
   );
   const dialog = screen.getByRole("dialog");
-  expect(within(dialog).getByText("Gain within 15 seconds")).toBeTruthy();
+  expect(within(dialog).getByText("Gain within 15.5 seconds")).toBeTruthy();
   expect(within(dialog).getByText("Observed growth pace")).toBeTruthy();
   expect(within(dialog).queryByText("Signal score")).toBeNull();
   fireEvent.click(
@@ -709,7 +817,9 @@ test("an early lead surfaces immediately outside the carousel, and disappears fr
   expect(screen.getByText("Full · recent filling")).toBeTruthy();
   sendRows([{ ...early, isFresh: false, notificationEligible: false }], 3);
   expect(screen.queryByLabelText("Early lead notification")).toBeNull();
-  expect(screen.getByText("Stale observation")).toBeTruthy();
+  expect(screen.queryByText("Falling off · stale")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Explore top 20" }));
+  expect(screen.getByText("Falling off · stale")).toBeTruthy();
 });
 
 test("population-first carousel leaves fresh actionable notification priority unchanged", () => {

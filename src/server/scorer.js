@@ -1,12 +1,12 @@
-import { updateBurstMemory } from "./burst-memory.js";
+import { retainedPlayersRequired, updateBurstMemory } from "./burst-memory.js";
 
 export const THRESHOLDS = {
   minimumPlayers: 13,
   earlyMaximumPlayers: 18,
   earlyGain: 2,
-  earlyWindowMs: 15000,
+  earlyWindowMs: 15500,
   rapidGain: 3,
-  rapidWindowMs: 10000,
+  rapidWindowMs: 15500,
   freshnessMs: 20000,
   signalHoldPolls: 2,
   sustainedMs: 60000,
@@ -66,26 +66,22 @@ export function score(
     (early?.gain ?? 0) >= THRESHOLDS.earlyGain;
   const strongGrowth =
     isFresh &&
-    openSlots > 0 &&
     players >= THRESHOLDS.minimumPlayers &&
     (rapid?.gain ?? 0) >= THRESHOLDS.rapidGain;
-  // A burst first observed at capacity is a missed-entry lead, never a join alert.
+  // A slower burst first observed at capacity remains informational. Rapid
+  // growth stays actionable because Roblox can place a join in the queue.
   const filledBurst =
     isFresh &&
     openSlots === 0 &&
     players >= THRESHOLDS.minimumPlayers &&
     (early?.gain ?? 0) >= THRESHOLDS.earlyGain;
   const evidence = strongGrowth ? rapid : early;
-  const signalHoldPollsRemaining =
-    awaitingFreshSample ||
-    (record.burstMemory &&
-      (now >= record.burstMemory.expiresAt ||
-        currentPoll >= (record.burstMemory.removeAtPoll ?? Infinity)))
-      ? 0
-      : Math.max(
-          0,
-          (record.signalHold?.expiresAtPoll ?? currentPoll) - currentPoll,
-        );
+  const signalHoldPollsRemaining = awaitingFreshSample
+    ? 0
+    : Math.max(
+        0,
+        (record.signalHold?.expiresAtPoll ?? currentPoll) - currentPoll,
+      );
   const liveRule =
     observedThisPoll && (growthQualifies || strongGrowth || filledBurst);
   const deltaPoll =
@@ -96,31 +92,35 @@ export function score(
       : null;
 
   const burst =
+    isFresh &&
     !awaitingFreshSample &&
     record.burstMemory?.capacity === capacity &&
-    currentPoll < (record.burstMemory?.removeAtPoll ?? Infinity) &&
-    now < (record.burstMemory?.expiresAt ?? 0)
+    players >= retainedPlayersRequired(record.burstMemory)
       ? record.burstMemory
       : null;
-  const retainedPopulation =
-    burst && burst.decliningAt == null && players >= burst.peakPlayers;
   const growingNow = liveRule && deltaPoll > 0;
 
   let alert = deltaPoll === null ? "warmup" : "watch";
   if (growingNow) alert = strongGrowth ? "cluster" : "potential";
-  else if (burst || signalHoldPollsRemaining > 0) alert = "potential";
+  else if (burst)
+    alert =
+      burst.tier ??
+      (record.signalHold?.reason === "rapid filling" ? "cluster" : "potential");
+  else if (signalHoldPollsRemaining > 0)
+    alert = record.signalHold?.tier ?? "potential";
+  // A server that vanished from the sampled high-population pages is no longer
+  // an active lead. Keep the last reading for context, but demote it immediately.
+  if (!isFresh) alert = "watch";
   const candidate = ["potential", "cluster"].includes(alert);
   const signalState = !candidate
     ? null
-    : burst?.decliningAt != null
-      ? "declining"
-      : !openSlots
-        ? "full"
-        : growingNow
-          ? "growing"
-          : burst?.retainedObserved && retainedPopulation
-            ? "holding"
-            : "recent";
+    : !openSlots
+      ? "full"
+      : growingNow
+        ? "growing"
+        : burst?.retainedObserved
+          ? "holding"
+          : "recent";
   const followUpConfirmed =
     candidate &&
     isFresh &&
@@ -154,13 +154,9 @@ export function score(
     const description =
       signalState === "holding"
         ? "Holding population"
-        : signalState === "declining"
-          ? `Population fell from the post-burst peak of ${burst.peakPlayers}; old lead is expiring`
-          : signalState === "full"
-            ? "Full after a burst"
-            : !retainedPopulation
-              ? "Population slipped; watching next observation"
-              : "Recent burst; awaiting a population follow-up";
+        : signalState === "full"
+          ? "Full after a burst"
+          : "Recent burst; awaiting a population follow-up";
     reasons.push(
       `${description}; burst +${burst.gain} in ${Number((burst.windowMs / 1000).toFixed(1))}s`,
     );
@@ -170,9 +166,7 @@ export function score(
     );
   if (burst)
     reasons.push(
-      burst.decliningAt != null
-        ? "Removal after the next completed poll unless a new burst qualifies"
-        : `${Math.ceil((burst.expiresAt - now) / 1000)}s visibility remaining (fresh retained readings can extend, 2m maximum)`,
+      `Held until population falls below ${retainedPlayersRequired(burst)} players (half the original +${burst.gain} burst retained)`,
     );
   if (followUpConfirmed)
     reasons.push("Population held on follow-up (not biome confirmation)");
@@ -181,8 +175,15 @@ export function score(
       `Sustained occupancy: 19–20/20 observed for ${Math.floor(nearFullDurationMs / 1000)}s (context only)`,
     );
   if (candidate && !openSlots)
-    reasons.push("Full at last observation; no open-slot notification");
-  if (!isFresh) reasons.push("Stale observation; awaiting a new sample");
+    reasons.push(
+      alert === "cluster"
+        ? "Full at last observation; joining enters the Roblox queue"
+        : "Full at last observation; no rapid queue signal",
+    );
+  if (!isFresh)
+    reasons.push(
+      "Falling off the sampled high-population pages; awaiting a new baseline",
+    );
   else if (awaitingFreshSample)
     reasons.push(
       "Fresh baseline after a stale gap; awaiting a second observation",
@@ -206,13 +207,16 @@ export function score(
     isFresh,
     awaitingFreshSample,
     signalState,
-    burstRemainingMs: burst ? burst.expiresAt - now : 0,
+    burstTier: burst?.tier ?? null,
     burstGainRetained: burst
       ? Math.min(burst.gain, Math.max(0, players - burst.baselinePlayers))
       : null,
     openSlots,
     notificationEligible: Boolean(
       growingNow && (growthQualifies || strongGrowth),
+    ),
+    noticeEligible: Boolean(
+      burst && isFresh && (openSlots > 0 || burst.tier === "cluster"),
     ),
     nearFullDurationMs,
     sustainedNearFull,
@@ -221,8 +225,8 @@ export function score(
   };
 }
 
-// Only real observations update evidence. Flat follow-ups may retain a burst
-// while its baseline is in the timed window; holds alone never renew it.
+// Only real observations update evidence. A retained burst remains active while
+// more than half its original gain is present; stale data never stays actionable.
 export function updateSignalHold(record, previousPlayers, poll) {
   const previous = record.history.at(-2);
   const dropped =
@@ -271,6 +275,7 @@ export function updateSignalHold(record, previousPlayers, poll) {
       triggerAt: continueEpisode ? hold.triggerAt : record.lastSeen,
       triggerPlayers: continueEpisode ? hold.triggerPlayers : record.players,
       capacity: record.capacity,
+      tier: current.strongGrowth ? "cluster" : "potential",
       confirmedAt: continueEpisode ? hold.confirmedAt : null,
       reason: current.strongGrowth
         ? "rapid filling"
@@ -279,5 +284,5 @@ export function updateSignalHold(record, previousPlayers, poll) {
           : "early growth",
     };
   }
-  updateBurstMemory(record, current, poll);
+  updateBurstMemory(record, current);
 }

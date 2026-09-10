@@ -8,7 +8,9 @@ export const signalLabels = {
 export const isCandidate = (row) =>
   ["cluster", "potential"].includes(row.alert);
 export const hasOpenSlot = (row) => row.players < row.capacity;
-export const isActionable = (row) => row.isFresh !== false && hasOpenSlot(row);
+export const isActionable = (row) =>
+  row.isFresh !== false &&
+  (hasOpenSlot(row) || (row.alert === "cluster" && row.signalState === "full"));
 
 // Keep urgency (freshness + an available slot) separate from evidence strength.
 export function compareSignals(a, b) {
@@ -33,8 +35,6 @@ export function compareSignals(a, b) {
   return (
     bucket(b) - bucket(a) ||
     active(b) - active(a) ||
-    Number(a.signalState === "declining") -
-      Number(b.signalState === "declining") ||
     tier(b) - tier(a) ||
     peerDifference ||
     Number(Boolean(b.followUpConfirmed)) -
@@ -46,13 +46,20 @@ export function compareSignals(a, b) {
 }
 
 export function signalLabel(row) {
-  if (row.isFresh === false) return "Stale observation";
+  if (row.isFresh === false) return "Falling off · stale";
   if (row.awaitingFreshSample) return "Awaiting fresh sample";
-  if (row.signalState === "declining") return "Declining · recent burst";
-  if (row.signalState === "full") return "Full · recent burst";
-  if (row.signalState === "holding") return "Holding population";
+  if (row.signalState === "full")
+    return row.alert === "cluster"
+      ? row.notificationEligible === false
+        ? "Full · rapid burst"
+        : "Full · rapid filling"
+      : "Full · recent burst";
+  if (row.signalState === "holding")
+    return row.alert === "cluster"
+      ? "Holding · rapid burst"
+      : "Holding population";
   if (isCandidate(row) && !hasOpenSlot(row)) return "Full · recent filling";
   if (isCandidate(row) && row.notificationEligible === false)
-    return "Recent lead";
+    return row.alert === "cluster" ? "Recent · rapid burst" : "Recent lead";
   return signalLabels[row.alert] ?? row.alert;
 }

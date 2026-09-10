@@ -33,7 +33,7 @@ function observe(r, players, at) {
   return score(r);
 }
 
-test("rapid filling requires +3 within 10 elapsed seconds and at least 13 players", () => {
+test("rapid filling requires +3 within 15.5 elapsed seconds and at least 13 players", () => {
   for (const [counts, times] of [
     [
       [10, 13],
@@ -53,35 +53,41 @@ test("rapid filling requires +3 within 10 elapsed seconds and at least 13 player
     assert.equal(result.notificationEligible, true);
     assert.equal(result.followUpConfirmed, false); // No confirmation wait.
   }
-  assert.equal(score(record([14, 17], [0, 10001])).alert, "potential");
-  assert.equal(score(record([14, 17], [0, 15001])).notificationEligible, false);
+  assert.equal(score(record([14, 17], [0, 15500])).alert, "cluster");
+  assert.equal(score(record([14, 17], [0, 15501])).notificationEligible, false);
   assert.equal(score(record([9, 12])).notificationEligible, false);
 });
 
 test("rates use elapsed time, window boundaries are exact, and anonymous gaps cannot imply rapid activity", () => {
   const fast = score(record([13, 17], [0, 5000]));
-  const slow = score(record([13, 17], [0, 15000]));
+  const slow = score(record([13, 17], [0, 15500]));
   assert.equal(fast.alert, "cluster");
-  assert.equal(slow.alert, "potential");
+  assert.equal(slow.alert, "cluster");
   assert.equal(fast.growthPer10s, 8);
-  assert.ok(Math.abs(slow.growthPer10s - 8 / 3) < 0.001);
-  assert.equal(score(record([11, 13], [0, 15000])).alert, "potential");
-  assert.equal(score(record([11, 13], [0, 15001])).notificationEligible, false);
+  assert.ok(Math.abs(slow.growthPer10s - 80 / 31) < 0.001);
+  assert.equal(score(record([11, 13], [0, 15500])).alert, "potential");
+  assert.equal(score(record([11, 13], [0, 15501])).notificationEligible, false);
   assert.equal(score(record([11, 17], [0, 20500])).notificationEligible, false);
 });
 
-test("full bursts are visible missed-entry leads, not actionable notifications", () => {
+test("full rapid bursts keep their tier and are actionable queue signals", () => {
   const r = record([17]);
   const full = observe(r, 20, 5000);
-  assert.equal(full.alert, "potential");
+  assert.equal(full.alert, "cluster");
+  assert.equal(full.strongGrowth, true);
   assert.equal(full.filledBurst, true);
-  assert.equal(full.notificationEligible, false);
-  assert.equal(signalLabel({ ...r, ...full }), "Full · recent burst");
+  assert.equal(full.notificationEligible, true);
+  assert.equal(full.noticeEligible, true);
+  assert.equal(signalLabel({ ...r, ...full }), "Full · rapid filling");
   assert.equal(full.signalHoldPollsRemaining, 2);
-  const drop = observe(r, 19, 10000);
-  assert.equal(drop.alert, "potential");
+  const held = observe(r, 20, 10000);
+  assert.equal(held.alert, "cluster");
+  assert.equal(signalLabel({ ...r, ...held }), "Full · rapid burst");
+  assert.equal(held.notificationEligible, false);
+  const drop = observe(r, 19, 15000);
+  assert.equal(drop.alert, "cluster");
+  assert.equal(signalLabel({ ...r, ...drop }), "Holding · rapid burst");
   assert.equal(drop.notificationEligible, false);
-  assert.equal(drop.signalHoldPollsRemaining, 1);
 });
 
 test("follow-up confirms retained population, not a biome, and never renews a hold by itself", () => {
@@ -120,8 +126,9 @@ test("freshness expires on wall time without consuming hold polls or manufacturi
   assert.equal(stale.isFresh, false);
   assert.equal(stale.notificationEligible, false);
   assert.equal(stale.signalHoldPollsRemaining, 2);
-  assert.equal(signalLabel({ ...r, ...stale }), "Stale observation");
-  assert.equal(score(r, 4, 25001).alert, "potential"); // Historical burst only.
+  assert.equal(stale.alert, "watch");
+  assert.equal(signalLabel({ ...r, ...stale }), "Falling off · stale");
+  assert.equal(score(r, 4, 25001).alert, "watch");
   assert.equal(score(r, 4, 25001).notificationEligible, false);
   assert.equal(r.history.length, 2);
   const full = record(Array(13).fill(20));
@@ -251,7 +258,7 @@ test("other-page polls, errors and heartbeats cannot supply a stale server's sec
   }
 });
 
-test("ranking puts actionable rapid filling first, then early leads, full and stale leads", () => {
+test("ranking puts actionable rapid filling first, then early, full and falling-off rows", () => {
   const row = (id, extra) => ({
     id,
     alert: "potential",
@@ -264,7 +271,7 @@ test("ranking puts actionable rapid filling first, then early leads, full and st
   });
   const rows = [
     row("full", { alert: "cluster", players: 20, growthPer10s: 99 }),
-    row("stale", { alert: "cluster", isFresh: false }),
+    row("stale", { alert: "watch", isFresh: false }),
     row("early", {}),
     row("rapid", { alert: "cluster" }),
     row("confirmed", { followUpConfirmed: true }),

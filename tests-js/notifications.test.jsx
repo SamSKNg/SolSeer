@@ -19,7 +19,14 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
-const preferences = { enabled: true, potential: true, cluster: true };
+const preferences = {
+  enabled: true,
+  potential: true,
+  cluster: true,
+  autoJoin: false,
+  autoJoinPotential: true,
+  autoJoinCluster: true,
+};
 const events = [
   { id: "candidate-123", alert: "potential", players: 17, capacity: 20 },
 ];
@@ -58,24 +65,42 @@ test("permission is requested only by a deliberate settings click; saving prefer
   );
   expect(Notification.requestPermission).not.toHaveBeenCalled();
   expect(
-    screen.getByRole("button", { name: "Save notification preferences" })
-      .disabled,
-  ).toBe(true);
+    screen.getByRole("button", { name: "Save signal preferences" }).disabled,
+  ).toBe(false);
   fireEvent.click(
     screen.getByRole("button", { name: "Allow browser notifications" }),
   );
   await screen.findByText("Browser permission: granted");
-  fireEvent.click(screen.getByLabelText("Early leads (+2 within 15s)"));
+  fireEvent.click(screen.getByLabelText("Early leads (+2 within 15.5s)"));
   fireEvent.click(
-    screen.getByRole("button", { name: "Save notification preferences" }),
+    screen.getByRole("button", { name: "Save signal preferences" }),
   );
-  await screen.findByText(/Notification preferences saved/);
+  await screen.findByText(/Signal preferences saved/);
   expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
     notifications: { ...preferences, potential: false },
   });
   expect(fetchMock.mock.calls[0][1].headers["X-Solseer-Token"]).toBe(
     "safe-token",
   );
+});
+
+test("settings save independent auto-join choices for early and rapid signals", async () => {
+  mockNotifications();
+  const fetchMock = vi.fn(async () => ({ ok: true }));
+  vi.stubGlobal("fetch", fetchMock);
+  render(
+    <NotificationSettings ready initial={preferences} token="safe-token" />,
+  );
+  fireEvent.click(screen.getByLabelText("Auto-join early leads"));
+  fireEvent.click(
+    screen.getByRole("button", { name: "Save signal preferences" }),
+  );
+  await screen.findByText(/Signal preferences saved/);
+  expect(JSON.parse(fetchMock.mock.calls[0][1].body).notifications).toEqual({
+    ...preferences,
+    autoJoinPotential: false,
+    autoJoinCluster: true,
+  });
 });
 
 test.each(["denied", "unsupported"])(

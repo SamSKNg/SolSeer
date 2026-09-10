@@ -22,7 +22,7 @@ function record(counts, step = 5000) {
   };
 }
 
-test("early leads use net +2 within 15 elapsed seconds at 13–18 players", () => {
+test("early leads use net +2 within 15.5 elapsed seconds at 13–18 players", () => {
   for (const counts of [
     [13, 15],
     [13, 14, 15],
@@ -49,6 +49,8 @@ test("early leads use net +2 within 15 elapsed seconds at 13–18 players", () =
   missed.history[1].poll = 5;
   assert.equal(score(missed).alert, "potential"); // Poll IDs do not define elapsed time.
   assert.notEqual(score(record([13, 15], 60000)).alert, "potential");
+  assert.equal(score(record([13, 15], 15500)).alert, "potential");
+  assert.notEqual(score(record([13, 15], 15501)).alert, "potential");
 });
 
 test("19/20 and 20/20 require a full observed minute, including alternating counts", () => {

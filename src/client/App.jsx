@@ -50,6 +50,12 @@ const peerSummary = (row) =>
     : `Growing faster than ${row.peerGrowth.percentile}% of ${row.peerGrowth.count} comparable sampled servers`;
 const observationAge = (row, now) =>
   `${Math.max(0, Math.floor(((now ?? row.lastSeen) - row.lastSeen) / 1000))}s`;
+const availability = (row) =>
+  row.players < row.capacity
+    ? `${Math.max(0, row.capacity - row.players)} open slots`
+    : row.alert === "cluster"
+      ? "Full · Roblox queue"
+      : "Full";
 const delta = (n) => (n == null ? "—" : `${n > 0 ? "+" : ""}${n}`);
 const date = (at) =>
   at
@@ -67,6 +73,7 @@ const blank = {
   polls: 0,
   tracked: 0,
   totalJoins: 0,
+  notifications: null,
 };
 
 function Badge({ value, row }) {
@@ -113,6 +120,12 @@ export function App() {
   const pageRef = useScrollReveals(tab, motionPaused);
   const drawerRef = useRef(null);
   const copyTimer = useRef(null);
+  const autoJoinRequest = useRef(null);
+  const feedbackRequest = useRef(null);
+  const [autoJoinBusy, setAutoJoinBusy] = useState(false);
+  const [autoJoinError, setAutoJoinError] = useState("");
+  const [feedbackBusy, setFeedbackBusy] = useState(null);
+  const [feedbackError, setFeedbackError] = useState("");
   const notificationError = useNotifications(data, (id) => {
     setTab("servers");
     setSelected(id);
@@ -127,7 +140,11 @@ export function App() {
       setDismissed((previous) => {
         const active = new Set(
           snapshot.rows
-            .filter((r) => ["cluster", "potential"].includes(r.alert))
+            .filter(
+              (r) =>
+                r.isFresh !== false &&
+                ["cluster", "potential"].includes(r.alert),
+            )
             .flatMap((r) => [`${r.id}:potential`, `${r.id}:cluster`]),
         );
         const next = new Set([...previous].filter((id) => active.has(id)));
@@ -139,8 +156,101 @@ export function App() {
     return () => {
       stream.close();
       clearTimeout(copyTimer.current);
+      autoJoinRequest.current?.abort();
+      feedbackRequest.current?.abort();
     };
   }, []);
+  const toggleAutoJoin = async () => {
+    if (autoJoinBusy) return;
+    const preferences = data.notifications?.preferences;
+    if (!preferences) return;
+    const controller = new AbortController();
+    autoJoinRequest.current?.abort();
+    autoJoinRequest.current = controller;
+    setAutoJoinBusy(true);
+    setAutoJoinError("");
+    try {
+      const settingsResponse = await fetch("/api/settings", {
+        signal: controller.signal,
+        cache: "no-store",
+      });
+      if (!settingsResponse.ok) throw new Error();
+      const { token, notifications: latestPreferences } =
+        await settingsResponse.json();
+      const response = await fetch("/api/settings", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Solseer-Token": token,
+        },
+        body: JSON.stringify({
+          notifications: {
+            ...(latestPreferences ?? preferences),
+            autoJoin: !preferences.autoJoin,
+          },
+        }),
+        signal: controller.signal,
+      });
+      if (!response.ok) throw new Error();
+      const result = await response.json();
+      if (!controller.signal.aborted)
+        setData((current) => ({
+          ...current,
+          notifications: {
+            ...current.notifications,
+            preferences: result.notifications,
+          },
+        }));
+    } catch {
+      if (!controller.signal.aborted)
+        setAutoJoinError("Could not update auto-join. Try again.");
+    } finally {
+      if (!controller.signal.aborted) setAutoJoinBusy(false);
+      if (autoJoinRequest.current === controller)
+        autoJoinRequest.current = null;
+    }
+  };
+  const setBiomeOutcome = async (joinId, outcome) => {
+    if (feedbackBusy != null) return;
+    const controller = new AbortController();
+    feedbackRequest.current?.abort();
+    feedbackRequest.current = controller;
+    setFeedbackBusy(joinId);
+    setFeedbackError("");
+    try {
+      const settingsResponse = await fetch("/api/settings", {
+        signal: controller.signal,
+        cache: "no-store",
+      });
+      if (!settingsResponse.ok) throw new Error();
+      const { token } = await settingsResponse.json();
+      const response = await fetch(`/api/joins/${joinId}/outcome`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Solseer-Token": token,
+        },
+        body: JSON.stringify({ outcome: outcome || null }),
+        signal: controller.signal,
+      });
+      if (!response.ok) throw new Error();
+      const { join } = await response.json();
+      if (!controller.signal.aborted)
+        setData((current) => ({
+          ...current,
+          joins: current.joins.map((entry) =>
+            entry.id === join.id ? { ...entry, outcome: join.outcome } : entry,
+          ),
+        }));
+    } catch {
+      if (!controller.signal.aborted)
+        setFeedbackError("Could not save biome outcome. Try again.");
+    } finally {
+      if (!controller.signal.aborted) setFeedbackBusy(null);
+      if (feedbackRequest.current === controller)
+        feedbackRequest.current = null;
+    }
+  };
   useEffect(() => {
     if (!selected) return;
     setCopied(false);
@@ -175,13 +285,15 @@ export function App() {
     };
   }, [selected]);
   const alerts = data.rows
-    .filter((r) => ["cluster", "potential"].includes(r.alert))
+    .filter(
+      (r) => r.isFresh !== false && ["cluster", "potential"].includes(r.alert),
+    )
     .sort((a, b) => b.players - a.players || compareSignals(a, b));
   const notifications = alerts
     .filter(
       (r) =>
         isActionable(r) &&
-        r.notificationEligible !== false &&
+        (r.noticeEligible ?? r.notificationEligible) !== false &&
         !dismissed.has(`${r.id}:${r.alert}`),
     )
     .sort(compareSignals);
@@ -193,7 +305,9 @@ export function App() {
           (r) =>
             r.players >= min &&
             (!hideJoined || !r.joined) &&
-            (!alertsOnly || ["cluster", "potential"].includes(r.alert)) &&
+            (!alertsOnly ||
+              (r.isFresh !== false &&
+                ["cluster", "potential"].includes(r.alert))) &&
             r.id.toLowerCase().includes(search.toLowerCase()),
         )
         .sort(
@@ -374,7 +488,7 @@ export function App() {
             />
             <Metric
               icon={History}
-              title="Join clicks"
+              title="Join attempts"
               value={data.totalJoins}
               note="Current session only"
             />
@@ -399,6 +513,21 @@ export function App() {
                   <span className="subtle">
                     {alerts.length} signals · population descending
                   </span>
+                  <button
+                    type="button"
+                    className="auto-join-toggle"
+                    aria-pressed={Boolean(
+                      data.notifications?.preferences.autoJoin,
+                    )}
+                    disabled={autoJoinBusy || !data.notifications?.preferences}
+                    title="Windows only. Launches Roblox for the strongest enabled signal type, including full rapid-fill queues, at most once per episode. Choose Early or Rapid in Settings."
+                    onClick={toggleAutoJoin}
+                  >
+                    <Zap size={15} aria-hidden="true" />
+                    {autoJoinBusy
+                      ? "Saving auto-join…"
+                      : `Auto-join ${data.notifications?.preferences.autoJoin ? "On" : "Off"}`}
+                  </button>
                   <div
                     className="signal-view-switch"
                     role="group"
@@ -422,6 +551,11 @@ export function App() {
                   </div>
                 </div>
               </div>
+              {autoJoinError && (
+                <p className="signal-setting-error" role="alert">
+                  {autoJoinError}
+                </p>
+              )}
               <SignalView
                 view={signalView}
                 items={alerts}
@@ -469,15 +603,13 @@ export function App() {
                       {r.joined ? (
                         <span
                           className="previously-joined"
-                          title={`${r.joined.count} recorded Join click(s) this session. Arrival in Roblox is not confirmed.`}
+                          title={`${r.joined.count} recorded join attempt(s) this session. Arrival in Roblox is not confirmed.`}
                         >
                           <Check size={13} aria-hidden="true" /> Previously
                           joined
                         </span>
                       ) : (
-                        <span>
-                          {Math.max(0, r.capacity - r.players)} open slots
-                        </span>
+                        <span>{availability(r)}</span>
                       )}
                       <div className="signal-actions">
                         <CopyServerLink id={r.id} />
@@ -499,7 +631,7 @@ export function App() {
                       </strong>
                       <p>
                         {data.polls
-                          ? "Early leads: +2 within 15s at 13–18 players. Rapid filling: +3 within 10s with an open slot."
+                          ? "Burst window: 15.5s. +2 is an early lead; +3 or more is rapid filling."
                           : "Your first observations will appear as soon as the request completes."}
                       </p>
                     </div>
@@ -512,7 +644,7 @@ export function App() {
                 count first; each server is only updated when its page is
                 sampled.
                 {data.pollIntervalMs > 15000 &&
-                  " Current polling is too slow to resolve the 10–15 second growth windows; close-together observations are required."}
+                  " Current polling is too slow to resolve the 15.5-second burst window; close-together observations are required."}
               </p>
               <section
                 id="live-servers"
@@ -604,7 +736,7 @@ export function App() {
                             <th>SIGNAL</th>
                             <th>PLAYERS</th>
                             <th>Δ OBSERVED</th>
-                            <th>GAIN ≤15s</th>
+                            <th>GAIN ≤15.5s</th>
                             <th>TREND</th>
                             <th>PACE /10s</th>
                             <th>AGE</th>
@@ -720,7 +852,8 @@ export function App() {
               <div className="panel-heading">
                 <h2>Opened servers</h2>
                 <span className="subtle">
-                  Latest 200 clicks · opening a link does not confirm arrival
+                  Latest 200 attempts · biome labels save locally with graph
+                  evidence
                 </span>
               </div>
               <div className="table-scroll">
@@ -732,6 +865,7 @@ export function App() {
                       <th>PLAYERS</th>
                       <th>SIGNAL AT CLICK</th>
                       <th>PACE /10s</th>
+                      <th>BIOME OUTCOME</th>
                       <th />
                     </tr>
                   </thead>
@@ -748,6 +882,21 @@ export function App() {
                         </td>
                         <td>{pace(j)}</td>
                         <td>
+                          <select
+                            className={`outcome-select ${j.outcome ?? "unmarked"}`}
+                            aria-label={`Biome outcome for ${j.jobId}`}
+                            value={j.outcome ?? ""}
+                            disabled={feedbackBusy != null}
+                            onChange={(event) =>
+                              setBiomeOutcome(j.id, event.target.value)
+                            }
+                          >
+                            <option value="">Unmarked</option>
+                            <option value="rare">Rare biome</option>
+                            <option value="not_rare">Not rare</option>
+                          </select>
+                        </td>
+                        <td>
                           <Join id={j.jobId} compact>
                             Rejoin
                           </Join>
@@ -758,8 +907,14 @@ export function App() {
                 </table>
                 {!data.joins.length && (
                   <div className="empty-table">
-                    Your Join clicks will appear here for this session.
+                    Your manual and automatic join attempts will appear here for
+                    this session.
                   </div>
+                )}
+                {feedbackError && (
+                  <p className="feedback-error" role="alert">
+                    {feedbackError}
+                  </p>
                 )}
               </div>
             </section>
@@ -881,9 +1036,8 @@ export function App() {
             Server {notice.id.slice(0, 8)} <ArrowUpRight size={16} />
           </button>
           <p>
-            {notice.players}/{notice.capacity} players ·{" "}
-            {Math.max(0, notice.capacity - notice.players)} open slots ·
-            observed {observationAge(notice, data.now)} ago
+            {notice.players}/{notice.capacity} players · {availability(notice)}
+            {" · "}observed {observationAge(notice, data.now)} ago
           </p>
           <small>
             {notice.reasons?.join(" · ") ||
@@ -925,7 +1079,7 @@ export function App() {
                   Observed {observationAge(detail, data.now)} ago ·{" "}
                   {detail.isFresh === false
                     ? "Stale; awaiting a sample"
-                    : `${Math.max(0, detail.capacity - detail.players)} open slots at last observation`}
+                    : `${availability(detail)} at last observation`}
                 </p>
                 <div className="detail-id">
                   <code>{detail.id}</code>
@@ -974,7 +1128,7 @@ export function App() {
                     note="players"
                   />
                   <Metric
-                    title="Gain within 15 seconds"
+                    title="Gain within 15.5 seconds"
                     value={delta(detail.growth15s)}
                     note="net players"
                   />
@@ -1024,8 +1178,8 @@ export function App() {
                 <Join id={detail.id} />
                 <p className="detail-note">
                   {detail.joined
-                    ? `Previously joined · ${detail.joined.count} recorded Join click(s). Last click ${date(detail.joined.at)}. Arrival in Roblox is not confirmed.`
-                    : "Opening a server records a join click for this session only."}
+                    ? `Previously joined · ${detail.joined.count} recorded join attempt(s). Last attempt ${date(detail.joined.at)}. Arrival in Roblox is not confirmed.`
+                    : "Opening a server records a join attempt for this session only."}
                 </p>
               </>
             ) : (

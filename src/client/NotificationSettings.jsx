@@ -4,14 +4,16 @@ import { DEFAULT_NOTIFICATIONS } from "../shared/notifications.js";
 import { notificationPermission } from "./useNotifications.js";
 
 export function NotificationSettings({ initial, token, ready }) {
-  const [preferences, setPreferences] = useState(
-    initial ?? DEFAULT_NOTIFICATIONS,
-  );
+  const [preferences, setPreferences] = useState({
+    ...DEFAULT_NOTIFICATIONS,
+    ...initial,
+  });
   const [permission, setPermission] = useState(notificationPermission);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const alive = useRef(true);
+  const savedEnabled = useRef(Boolean(initial?.enabled));
   const request = useRef(null);
   const testNotice = useRef(null);
   useEffect(() => {
@@ -42,7 +44,9 @@ export function NotificationSettings({ initial, token, ready }) {
     if (
       busy ||
       !ready ||
-      (preferences.enabled && notificationPermission() !== "granted")
+      (preferences.enabled &&
+        !savedEnabled.current &&
+        notificationPermission() !== "granted")
     )
       return;
     setBusy(true);
@@ -61,10 +65,12 @@ export function NotificationSettings({ initial, token, ready }) {
         signal: controller.signal,
       });
       if (!response.ok) throw new Error();
-      if (alive.current)
+      if (alive.current) {
+        savedEnabled.current = preferences.enabled;
         setMessage(
-          "Notification preferences saved on this machine. Only new signals will notify.",
+          "Signal preferences saved on this machine. Only new signals will notify or auto-join.",
         );
+      }
     } catch {
       if (alive.current)
         setError(
@@ -113,9 +119,9 @@ export function NotificationSettings({ initial, token, ready }) {
         Desktop alerts for new signals, even when this tab is in the background.
       </p>
       <p className="subtle">
-        Keep the app and browser tab running. Browser or Windows Do Not Disturb
-        settings may suppress alerts. Clicking an alert opens server details; it
-        never joins automatically.
+        Keep the backend app running. Desktop alerts also need this browser tab;
+        browser or Windows Do Not Disturb settings may suppress them. Clicking
+        an alert opens server details.
       </p>
       <p className="settings-status">Browser permission: {permission}</p>
       {permission === "denied" && (
@@ -154,7 +160,7 @@ export function NotificationSettings({ initial, token, ready }) {
               })
             }
           />
-          Early leads (+2 within 15s)
+          Early leads (+2 within 15.5s)
         </label>
         <label className="settings-consent">
           <input
@@ -165,15 +171,49 @@ export function NotificationSettings({ initial, token, ready }) {
               setPreferences({ ...preferences, cluster: event.target.checked })
             }
           />
-          Rapid filling (+3 within 10s)
+          Rapid filling (+3 or more within 15.5s)
         </label>
         <p className="subtle">
           Early alerts fire immediately at 13–18 players, without waiting for
-          confirmation. Rapid filling alerts require an open slot. Full, stale,
-          and held-only leads do not trigger desktop alerts. One alert per
-          episode, plus a rapid-filling upgrade; simultaneous detections are
-          grouped.
+          confirmation. Rapid filling includes full servers because Roblox can
+          queue the join. Stale and held-only leads do not trigger a new desktop
+          alert. One desktop alert per episode, plus a rapid-filling upgrade;
+          simultaneous detections are grouped.
         </p>
+        <div className="settings-divider" aria-hidden="true" />
+        <h3>Auto-join signal types</h3>
+        <p className="subtle">
+          Choose which new signals the Auto-join switch may open. The master
+          switch remains beside Signals to watch on the Server radar page.
+        </p>
+        <label className="settings-consent">
+          <input
+            type="checkbox"
+            checked={preferences.autoJoinPotential}
+            disabled={!ready || busy}
+            onChange={(event) =>
+              setPreferences({
+                ...preferences,
+                autoJoinPotential: event.target.checked,
+              })
+            }
+          />
+          Auto-join early leads
+        </label>
+        <label className="settings-consent">
+          <input
+            type="checkbox"
+            checked={preferences.autoJoinCluster}
+            disabled={!ready || busy}
+            onChange={(event) =>
+              setPreferences({
+                ...preferences,
+                autoJoinCluster: event.target.checked,
+              })
+            }
+          />
+          Auto-join rapid filling (includes full queues)
+        </label>
         <div className="settings-actions">
           {permission === "default" && (
             <button type="button" onClick={allow}>
@@ -185,10 +225,12 @@ export function NotificationSettings({ initial, token, ready }) {
             disabled={
               !ready ||
               busy ||
-              (preferences.enabled && permission !== "granted")
+              (preferences.enabled &&
+                !savedEnabled.current &&
+                permission !== "granted")
             }
           >
-            {busy ? "Saving preferences…" : "Save notification preferences"}
+            {busy ? "Saving preferences…" : "Save signal preferences"}
           </button>
           <button
             type="button"

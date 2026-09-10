@@ -7,7 +7,14 @@ import { Notifications } from "../src/server/notifications.js";
 import { Store } from "../src/server/store.js";
 import { Tracker } from "../src/server/tracker.js";
 
-const enabled = { enabled: true, potential: true, cluster: true };
+const enabled = {
+  enabled: true,
+  potential: true,
+  cluster: true,
+  autoJoin: false,
+  autoJoinPotential: true,
+  autoJoinCluster: true,
+};
 const row = (alert = "potential", id = "server") => ({
   id,
   alert,
@@ -29,7 +36,7 @@ async function fixture(run) {
   }
 }
 
-test("a long held plateau stays visible without repeating or rearming desktop alerts", () =>
+test("a long held plateau stays visible and pinned without repeating desktop alerts", () =>
   fixture(async (notifications) => {
     await notifications.save(enabled);
     const store = new Store();
@@ -61,8 +68,9 @@ test("a long held plateau stays visible without repeating or rearming desktop al
         assert.equal(tracker.snapshot().rows[0].signalState, "holding");
       }
       for (let i = 0; i < 10; i++) assert.deepEqual(await poll(16), []);
-      assert.equal(tracker.snapshot().rows[0].alert, "watch");
-      assert.equal((await poll(18)).length, 1);
+      assert.equal(tracker.snapshot().rows[0].alert, "potential");
+      assert.equal(tracker.snapshot().rows[0].noticeEligible, true);
+      assert.deepEqual(await poll(18), []);
     } finally {
       store.close();
     }
@@ -78,6 +86,18 @@ test("notification preferences persist independently, validate input and default
       await readFile(join(folder, ".env"), "utf8"),
       "synthetic-cookie-fixture",
     );
+    await writeFile(
+      notifications.path,
+      JSON.stringify({ enabled: true, potential: false, cluster: true }),
+    );
+    assert.deepEqual(new Notifications(folder).preferences, {
+      enabled: true,
+      potential: false,
+      cluster: true,
+      autoJoin: false,
+      autoJoinPotential: true,
+      autoJoinCluster: true,
+    });
     for (const value of [null, {}, { ...enabled, enabled: "true" }])
       await assert.rejects(notifications.save(value), { status: 400 });
     await writeFile(notifications.path, "invalid JSON");
@@ -182,6 +202,34 @@ test("held, full, and stale leads cannot enqueue alerts, and heartbeats discard 
     );
   }));
 
+test("a newly full rapid signal notifies and remains eligible for the Roblox queue", () =>
+  fixture(async (_notifications, folder) => {
+    const joined = [];
+    const notifications = new Notifications(folder, {
+      onAutoJoin: (event) => joined.push(event),
+    });
+    await notifications.save({ ...enabled, autoJoin: true });
+    const fullRapid = {
+      ...row("cluster", "full-rapid"),
+      players: 20,
+      signalState: "full",
+    };
+    notifications.update(sample(1, [fullRapid]));
+    assert.equal(notifications.claim()[0].id, "full-rapid");
+    assert.deepEqual(
+      joined.map((event) => event.id),
+      ["full-rapid"],
+    );
+    notifications.update(
+      sample(2, [{ ...fullRapid, notificationEligible: false }]),
+    );
+    assert.deepEqual(notifications.claim(), []);
+    assert.deepEqual(
+      joined.map((event) => event.id),
+      ["full-rapid"],
+    );
+  }));
+
 test("end-to-end first growth observation notifies immediately, follow-up does not repeat, upgrade notifies once", () =>
   fixture(async (notifications) => {
     await notifications.save(enabled);
@@ -221,4 +269,95 @@ test("end-to-end first growth observation notifies immediately, follow-up does n
     } finally {
       store.close();
     }
+  }));
+
+test("auto-join selects one strongest new signal and runs once per episode", () =>
+  fixture(async (_notifications, folder) => {
+    const joined = [];
+    const notifications = new Notifications(folder, {
+      onAutoJoin: (event) => joined.push(event),
+    });
+    await notifications.save({ ...enabled, enabled: false, autoJoin: true });
+    notifications.update(
+      sample(1, [row("potential", "early"), row("cluster", "rapid")]),
+    );
+    assert.deepEqual(
+      joined.map((event) => event.id),
+      ["rapid"],
+    );
+    assert.equal(
+      notifications.update(sample(1, [row("cluster", "rapid")])).pending,
+      0,
+    );
+    notifications.update(sample(2, [row("cluster", "rapid")]));
+    notifications.update(sample(3, [row("potential", "rapid")]));
+    assert.deepEqual(
+      joined.map((event) => event.id),
+      ["rapid"],
+    );
+    notifications.update(sample(4, []));
+    notifications.update(sample(5, []));
+    notifications.update(sample(6, [row("potential", "rapid")]));
+    assert.deepEqual(
+      joined.map((event) => event.id),
+      ["rapid", "rapid"],
+    );
+  }));
+
+test("auto-join respects signal type choices and never replays an active episode when enabled", () =>
+  fixture(async (_notifications, folder) => {
+    const joined = [];
+    const notifications = new Notifications(folder, {
+      onAutoJoin: (event) => joined.push(event),
+    });
+    notifications.update(sample(1, [row("potential", "existing")]));
+    await notifications.save({
+      ...enabled,
+      enabled: false,
+      potential: false,
+      autoJoin: true,
+    });
+    notifications.update(sample(2, [row("potential", "existing")]));
+    assert.deepEqual(joined, []);
+    notifications.update(sample(3, [row("cluster", "existing")]));
+    assert.deepEqual(
+      joined.map((event) => event.id),
+      ["existing"],
+    );
+  }));
+
+test("auto-join has independent early and rapid signal selectors", () =>
+  fixture(async (_notifications, folder) => {
+    const joined = [];
+    const notifications = new Notifications(folder, {
+      onAutoJoin: (event) => joined.push(event.id),
+    });
+    await notifications.save({
+      ...enabled,
+      enabled: false,
+      potential: false,
+      cluster: false,
+      autoJoin: true,
+      autoJoinPotential: false,
+      autoJoinCluster: true,
+    });
+    notifications.update(
+      sample(1, [row("potential", "early"), row("cluster", "rapid")]),
+    );
+    assert.deepEqual(joined, ["rapid"]);
+    notifications.update(sample(2, []));
+    notifications.update(sample(3, []));
+    await notifications.save({
+      ...enabled,
+      enabled: false,
+      potential: false,
+      cluster: false,
+      autoJoin: true,
+      autoJoinPotential: true,
+      autoJoinCluster: false,
+    });
+    notifications.update(
+      sample(4, [row("potential", "early"), row("cluster", "rapid")]),
+    );
+    assert.deepEqual(joined, ["rapid", "early"]);
   }));

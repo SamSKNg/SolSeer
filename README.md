@@ -4,7 +4,7 @@ A little public-server radar for Sol's RNG. Find the gathering before the server
 
 I just vibe coded this on the side. It's a scrappy solo-dev project built around something I kept noticing: when a rare biome shows up, people flock to that server fast. By the time a signal looks really convincing, there might not be a slot left.
 
-So the goal is simple: **spot unusual population growth early, surface a server worth checking, and give you a join link while there's still room.**
+So the goal is simple: **spot unusual population growth early, surface a server worth checking, and give you a join link while there is still room—or a fresh queue worth entering.**
 
 This is not a confirmed biome detector. It's a population tracker with some deliberately early heuristics and a UI I probably spent too long making reflective.
 
@@ -17,10 +17,11 @@ You get:
 - A live, population-sorted server list, tucked away until you want it. Top 10 or 20, with filters.
 - Early leads and rapid-filling signals in a carousel or a numbered card index, plus an actionable corner notice. Switch with **Carousel / Cards** above Signals to watch; both views sort by **player count, highest first**, with signal priority breaking population ties, and share Join/Copy actions. The choice lasts while the page is open, including navigation between app pages; a reload defaults to the carousel.
 - Population graphs, observation age, open slots, and a plain-English reason for each signal.
-- Join/rejoin buttons, copyable server links, and a record of your join clicks for the session.
-- Optional desktop notifications, so you don't have to stare at the page.
+- Join/rejoin buttons, copyable server links, and a record of join attempts for the session.
+- Rare biome / Not rare labels on join attempts, saved locally with their population graph evidence for future analysis.
+- Optional desktop notifications and opt-in Windows auto-join, so you don't have to stare at the page.
 
-It doesn't read the biome inside a server, inject anything into Roblox, automatically join for you, or confirm that a join click got you into the game. The only detection input is sampled public population data. A friend group joining together can look like a rare-biome rush. False positives are part of the tradeoff here.
+It doesn't read the biome inside a server, inject anything into Roblox, or confirm that a join attempt got you into the game. The only detection input is sampled public population data. A friend group joining together can look like a rare-biome rush. False positives are part of the tradeoff here.
 
 ### joining a server
 
@@ -28,22 +29,24 @@ Join and Rejoin record your click locally, then hand off straight to the install
 
 You need Roblox installed and signed in. Your browser may ask **Open Roblox?**; allow it if you intended to join. The cookie in solseer's Settings is for polling, not for signing the Roblox client into an account. This doesn't bypass full servers or access restrictions, and solseer can't verify which server the client ultimately joins.
 
+On Windows, the **Auto-join** toggle beside **Signals to watch** launches the installed Roblox app for at most one newly detected server per poll. Settings has independent **Auto-join early leads** and **Auto-join rapid filling** choices; full Rapid signals are included so Roblox can place the attempt in its queue. It records the attempt in Join history, does not replay a signal that was already active when you enabled it, and does not launch the same episode again after a later tier change.
+
 **Copy server link** copies that same direct-app link. Some chat apps won't make `roblox://` links clickable; recipients can paste the full link into their browser's address bar. There is no automatic fallback to normal matchmaking. If the app doesn't open, check that Roblox is installed and that your browser hasn't blocked the launch prompt.
 
 ## the heuristics, no mystery sauce
 
 These are hand-written rules, not a trained model. The thresholds are starting points, not numbers backed by a labeled biome dataset.
 
-| Signal                | What triggers it                                                                                         | What happens                                                                                                                                                 |
-| --------------------- | -------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Early lead            | Net **+2 players within 15 seconds**, currently **13–18 players**, with an open slot                     | Show it immediately; optionally send a desktop alert. No confirmation wait.                                                                                  |
-| Rapid filling         | Net **+3 players within 10 seconds**, currently **13+ players**, with an open slot                       | Highest-priority actionable tier; can upgrade an early alert.                                                                                                |
-| Follow-up             | Another real observation within **20 seconds** of the trigger holds or exceeds the triggering population | Add supporting context. This confirms sampled population held, **not a biome**.                                                                              |
-| Holding population    | A previously detected burst gets fresh readings without any population drop since the burst              | Keep the card visible below active growth. No repeat notification from a plateau.                                                                            |
-| Declining burst       | A **−1** change from the previous actual observation after a burst                                       | Show **Declining · recent burst** until the next completed poll; remove unless new growth qualifies. A **−2 or larger** drop removes the signal immediately. |
-| Full / recent filling | A recent lead fills, or a **+2 within 15s** burst is first seen at capacity                              | Keep it as a recent lead, behind joinable candidates. No desktop join alert.                                                                                 |
-| Sustained occupancy   | **19–20/20 for at least one observed minute**, with no observation gaps over 20 seconds                  | Context only. Being full does not create an alert on its own.                                                                                                |
-| Stale observation     | No actual observation of that server for **more than 20 seconds**                                        | Label the old reading clearly. Don't notify from it.                                                                                                         |
+| Signal               | What triggers it                                                                                                     | What happens                                                                                                                                                                      |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Early lead           | Net **+2 players within 15.5 seconds**, currently **13–18 players**, with an open slot                               | Show it immediately; optionally send a desktop alert. No confirmation wait.                                                                                                       |
+| Rapid filling        | Net **+3 or more players within 15.5 seconds**, currently **13+ players**, including a reading that reaches capacity | Highest-priority evidence tier; can upgrade an early alert. Full readings show a Full indicator and can enter Roblox's queue.                                                     |
+| Follow-up            | Another real observation within **20 seconds** of the trigger holds or exceeds the triggering population             | Add supporting context. This confirms sampled population held, **not a biome**.                                                                                                   |
+| Holding burst        | A previously detected burst retains more than half of its original net gain                                          | Keep the card and actionable corner notice visible below active growth. Retained Rapid signals say **Holding · rapid burst**. No repeat notification or auto-join from a plateau. |
+| Burst loss threshold | At least half of the original burst gain has left                                                                    | Remove the retained burst and its corner notice immediately.                                                                                                                      |
+| Full signal          | A Rapid burst reaches 20/20, or a **+2 within 15.5s** burst is first seen at capacity                                | Rapid stays Rapid and can notify/auto-join into the queue; a full Early burst remains an informational recent lead.                                                               |
+| Sustained occupancy  | **19–20/20 for at least one observed minute**, with no observation gaps over 20 seconds                              | Context only. Being full does not create an alert on its own.                                                                                                                     |
+| Falling off / stale  | No actual observation of that server for **more than 20 seconds**                                                    | Immediately remove it from signals and treat it as non-important. Keep its last reading briefly in the live list for context.                                                     |
 
 A few details that matter:
 
@@ -51,16 +54,16 @@ A few details that matter:
 - Windows use **actual observation timestamps**, not "three requests must mean fifteen seconds." Another page being fetched is not another observation of this server.
 - A population dip or capacity change resets the growth baseline. Old gains aren't recycled after a drop.
 - After a stale gap (over 20 seconds), the first returning observation resets the growth baseline and clears any old lead hold. It shows **Awaiting fresh sample**, with no lead or notification. A second actual observation of that same server must show qualifying growth from the new baseline; a flat follow-up does not validate the jump during the gap. Other-page polls and UI heartbeats don't count, and another stale gap restarts the guard.
-- A burst starts **60 seconds of wall-clock visibility**. Fresh non-declining readings extend visibility to 60 seconds after that reading, capped at **two minutes from the original trigger**. Flat readings don't start new burst episodes or desktop alerts.
-- **A −1 post-burst change marks the signal for removal after the next completed global poll.** It stays briefly as Declining · recent burst; flat readings and +1 rebounds cannot save it. A new qualifying burst from a post-drop baseline can start a fresh episode instead. A **−2 or larger change in one observation removes the signal immediately**, including its short grace hold. Other-page polls and failed requests complete the pending −1 removal too; heartbeats, requests still in flight and quota waits do not. Losses are measured between actual observations, not inferred from a missing server. Departures are negative evidence, not proof a rare biome is absent. This removes the signal, not the server's observation history or its normal live-list entry.
-- The short two-completed-poll grace period still exists alongside burst memory, but cannot keep an expired burst alive. Other-page polls and failures consume that short grace, not the longer wall-clock visibility. Only real retained-population readings extend the longer timer. Stale readings never notify, and returning after a stale gap clears both old holds.
+- A burst stays retained while **more than half of its original net gain remains**. For an original +4 burst, a loss of 2 removes it; for +3, the next whole-player loss means a loss of 2. Later peaks do not raise this threshold.
+- Only actual observations can prove that population loss. Other-page polls, failures, heartbeats, requests still in flight, and quota waits cannot remove a retained burst. A full Rapid reading can remain actionable through Roblox's queue; full Early and all stale readings are not actionable. Returning after a stale gap clears the old burst rather than recycling it.
+- The short two-completed-poll grace period still applies to ordinary signal holds. It cannot preserve a burst after the half-loss threshold is reached.
 - Below-13 observations already returned by Roblox are retained internally as baselines. The live list still defaults to 13+; held cards can temporarily show a lower count.
 
 ### how leads are ranked
 
-The signal carousel and card index sort by **player count descending**, using the signal ranking below to break ties. Full or stale high-population cards can therefore appear before lower-population actionable leads; their labels still show their status. The expandable live list also stays population-first.
+The signal carousel and card index sort fresh signals by **player count descending**, using the signal ranking below to break ties. Stale servers do not appear there. Their last reading can remain briefly in the population-sorted expandable live list as **Falling off · stale**.
 
-Signal priority itself is unchanged: fresh candidates with open slots come first, then full candidates, then stale held leads. Within those groups, active growth comes before retained bursts; rapid filling comes before early growth. Peer-relative growth, follow-up confirmation, observed growth pace, freshness, and a stable server ID break ties. The actionable corner notice and desktop notifications retain this urgency-based ranking rather than following the population display order.
+Signal priority puts fresh candidates with open slots first, then full candidates. Within those groups, active growth comes before retained bursts; rapid filling comes before early growth. Peer-relative growth, follow-up confirmation, observed growth pace, freshness, and a stable server ID break ties. The actionable corner notice and desktop notifications retain this urgency-based ranking rather than following the population display order.
 
 There is **no biome confidence percentage or weighted mystery score**. `Pace /10s` just normalizes observed net growth to ten seconds. For example, +2 in 5 seconds is a pace of 4 per 10 seconds. That's a description of the sampled movement, not a prediction that four more people are coming.
 
@@ -72,13 +75,13 @@ Peers must have the same capacity, start within **±2 players**, cover a duratio
 
 With at least **20 comparable peers**, the card shows the percentage with a strictly lower slope; ties don't count as faster. Details also show the peer median. With fewer peers, it says **Insufficient comparison data**, and sorting uses a neutral internal midpoint instead of inventing a displayed percentile. Comparisons rank leads only: a lone +1 among flat servers cannot create an alert just because its percentile is high.
 
-These are comparisons within our sampled servers, not all Roblox servers and definitely not a biome probability. Full servers have no room for positive net growth; their burst history stays visible without calling a flat 20/20 reading a new surge. No additional API requests are made for these calculations.
+These are comparisons within our sampled servers, not all Roblox servers and definitely not a biome probability. A full server cannot show further positive net growth, so its Rapid tier comes from the burst that reached capacity; a later flat 20/20 reading is labeled as a retained Rapid burst, not a new surge. No additional API requests are made for these calculations.
 
 The rules live in [scorer.js](src/server/scorer.js), retention in [burst-memory.js](src/server/burst-memory.js), and peer comparisons in [peer-growth.js](src/server/peer-growth.js); the shared ordering lives in [signals.js](src/shared/signals.js).
 
 ## three-second polling does not mean every server, every three seconds
 
-With a cookie configured, solseer targets **one two-page poll cycle every 3 seconds**, capped at **40 API attempts per rolling minute**. Page 1 supplies a fresh cursor for page 2, so the two requests run back-to-back, not simultaneously. There is no additional three-second wait between them. Each pair counts as **one completed heuristic poll**: time windows, the two-poll grace, and next-poll decline removal are unchanged. Without a cookie, it's still **one page every 20.5 seconds / 3 attempts per minute**. The anonymous cadence can't resolve the 10–15 second growth windows; the UI warns about this rather than pretending it can.
+With a cookie configured, solseer targets **one two-page poll cycle every 3 seconds**, capped at **40 API attempts per rolling minute**. Page 1 supplies a fresh cursor for page 2, so the two requests run back-to-back, not simultaneously. There is no additional three-second wait between them. Each pair counts as **one completed heuristic poll** for time windows and the two-poll grace. Without a cookie, it's still **one page every 20.5 seconds / 3 attempts per minute**. The anonymous cadence can't resolve the 15.5-second burst window; the UI warns about this rather than pretending it can.
 
 Each request fetches at most 100 servers. Authenticated polling repeatedly fetches:
 
@@ -158,15 +161,17 @@ On Windows, `npm run start:authenticated` offers a masked, non-persistent prompt
 
 ## notifications and what survives a restart
 
-In Settings, enable desktop notifications, choose early leads and/or rapid filling, allow browser notifications, and save. The test button doesn't call Roblox. Notifications are off by default.
+In Settings, choose early leads and/or rapid filling for desktop alerts, plus which of those two tiers Auto-join may open. The main Server radar page has the separate Windows auto-join master toggle beside **Signals to watch**. Browser permission is required only for desktop alerts. The test button doesn't call Roblox. Both delivery options are off by default.
 
-Keep the app and a browser tab running. Browser permissions and OS notification settings are separate from solseer's preferences; delivery can be delayed or suppressed. This isn't a background push service for a closed browser.
+Keep the backend app running. Desktop alerts additionally need an open browser tab; browser permissions and OS notification settings are separate from solseer's preferences and may suppress delivery. Auto-join launches Roblox from the local Windows backend and does not require the browser tab to remain open.
 
-Desktop alerts fire once per signal episode, with one extra alert for a rapid-filling upgrade. Repeated polls don't spam you. Two completed polls outside candidate status rearm a server. Simultaneous alerts are grouped and delivery is shared across tabs. Full, stale, and held-only leads don't notify; queued alerts are rechecked before delivery. Clicking a notification opens details, not an automatic join.
+Desktop alerts fire once per signal episode, with one extra alert for a rapid-filling upgrade. Repeated polls don't spam you. Two completed polls outside candidate status rearm a server. Simultaneous alerts are grouped and delivery is shared across tabs. A newly full Rapid signal can alert; full Early, stale, and held-only leads do not create a new desktop alert. Queued alerts are rechecked before delivery. Clicking a desktop notification opens details. Auto-join is a separate opt-in and launches only the strongest enabled new signal in a poll.
 
 **Saved locally:** cookie configuration and notification preferences.
 
-**Session only:** population history, signal holds, notification deduplication, join clicks, joined markers, and local request/cooldown tracking. A refresh or another tab shares the running backend session. Restarting the backend clears it. A recorded join means you clicked Join, not that Roblox let you in.
+Biome feedback is also saved locally in `biome-feedback.json` beside the settings file. Each labeled example contains the Job ID, join-time signal fields, and up to 120 recent public population observations. It contains no Roblox cookie or account identity. Changing a label replaces that example; choosing **Unmarked** removes it from the collection.
+
+**Session only:** population history, signal holds, notification/auto-join deduplication, join attempts, joined markers, and local request/cooldown tracking. A refresh or another tab shares the running backend session. Restarting the backend clears it. A recorded join means solseer attempted the handoff, not that Roblox let you in.
 
 ## poking around
 

@@ -79,6 +79,17 @@
   margin-top: 5px;
   accent-color: #d7dbcb;
 }
+.notification-settings h3 {
+  margin: 24px 0 8px;
+  color: #eeeee6;
+  font-size: 15px;
+  font-weight: 500;
+}
+.settings-divider {
+  height: 1px;
+  margin-top: 28px;
+  background: #ffffff24;
+}
 .settings-actions {
   display: flex;
   flex-wrap: wrap;

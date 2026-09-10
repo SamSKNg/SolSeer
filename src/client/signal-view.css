@@ -40,6 +40,41 @@
   outline: 2px solid #eee8da;
   outline-offset: 4px;
 }
+.auto-join-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 40px;
+  padding: 8px 12px;
+  border: 1px solid #ffffff30;
+  background: transparent;
+  color: #aaa79e;
+  font: inherit;
+  font-size: 12px;
+}
+.auto-join-toggle[aria-pressed="true"] {
+  border-color: #bfd0a861;
+  background: #b4d69c14;
+  color: #c7ddbf;
+}
+.auto-join-toggle:hover:not(:disabled) {
+  background: #ffffff0c;
+  color: #eee8da;
+}
+.auto-join-toggle:focus-visible {
+  outline: 2px solid #eee8da;
+  outline-offset: 4px;
+}
+.auto-join-toggle:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+.signal-setting-error {
+  margin: -4px 0 18px;
+  color: #e4ada5;
+  font-size: 12px;
+}
 .gallery .signal-index {
   margin-inline: 3%;
   min-width: 0;
