@@ -122,7 +122,7 @@ The app listens on your machine only. This is a local tool, not a hosted service
 
 ### windows, without installing node
 
-Grab the [v0.4.1 Windows x64 ZIP](https://github.com/SamSKNg/SolSeer/releases/download/v0.4.1/solseer-v0.4.1-windows-x64.zip). See the [release notes](docs/releases/v0.4.1.md) for what changed. When updating, stop the old copy and extract the new ZIP into a fresh folder; your saved cookie, notification preferences, and biome feedback stay in their separate local settings folder.
+Grab the [v0.5.0 Windows x64 ZIP](https://github.com/SamSKNg/SolSeer/releases/download/v0.5.0/solseer-v0.5.0-windows-x64.zip). See the [release notes](docs/releases/v0.5.0.md) for what changed. When updating, stop the old copy and extract the new ZIP into a fresh folder; your saved cookie, notification preferences, and biome observations stay in their separate local settings folder.
 
 If you have a portable ZIP, extract the whole thing and double-click **Start solseer.cmd** inside the `solseer` folder. Keep its console open; Ctrl+C stops it. Stop an existing copy first if the port is already occupied.
 
