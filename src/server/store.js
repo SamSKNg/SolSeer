@@ -1,8 +1,7 @@
 // One store per backend session. No filesystem, SQLite, or browser storage.
 import { AUTHENTICATED_POLLING } from "./polling-config.js";
 import { randomUUID } from "node:crypto";
-
-export const BIOME_OUTCOMES = Object.freeze(["rare", "not_rare"]);
+import { BIOMES } from "../shared/biomes.js";
 
 const observations = (row) =>
   (row.history ?? []).slice(-120).map(({ at, players, capacity, poll }) => ({
@@ -44,7 +43,11 @@ export class Store {
       alert: row.alert ?? null,
       signalState: row.signalState ?? null,
       growthPer10s: row.growthPer10s ?? null,
-      outcome: null,
+      biome: null,
+      biomeConfidence: null,
+      biomeDetectedAt: null,
+      biomeText: null,
+      biomeSource: null,
     };
     Object.defineProperty(entry, "joinObservations", {
       value: observations(row),
@@ -70,9 +73,24 @@ export class Store {
       [...this.#joined].map(([id, value]) => [id, { ...value }]),
     );
   }
-  feedbackExample(id, outcome, current, now = Date.now()) {
-    if (outcome !== null && !BIOME_OUTCOMES.includes(outcome))
-      throw Object.assign(new Error("Invalid biome outcome."), { status: 400 });
+  recordJoinBiome(jobId, reading, observedAfter = 0) {
+    if (!BIOMES.includes(reading?.biome)) return null;
+    const detectedAt = Number(reading.biomeAt);
+    if (!Number.isFinite(detectedAt) || detectedAt < observedAfter) return null;
+    const entry = this.#history.find(
+      (row) => row.jobId === jobId && row.biome == null && detectedAt >= row.at,
+    );
+    if (!entry) return null;
+    entry.biome = reading.biome;
+    entry.biomeConfidence = Number.isFinite(reading.biomeConfidence)
+      ? reading.biomeConfidence
+      : null;
+    entry.biomeDetectedAt = detectedAt;
+    entry.biomeText = String(reading.biomeText ?? "").slice(0, 1000);
+    entry.biomeSource = "windows_ocr";
+    return { ...entry };
+  }
+  biomeExample(id, current, now = Date.now()) {
     const entry = this.#history.find((row) => row.id === id);
     if (!entry)
       throw Object.assign(new Error("Join attempt was not found."), {
@@ -80,8 +98,12 @@ export class Store {
       });
     return {
       feedbackId: entry.feedbackId,
-      outcome,
-      labeledAt: now,
+      biome: entry.biome,
+      confidence: entry.biomeConfidence,
+      rawText: entry.biomeText,
+      source: entry.biomeSource,
+      detectedAt: entry.biomeDetectedAt,
+      recordedAt: now,
       join: {
         jobId: entry.jobId,
         at: entry.at,
@@ -94,15 +116,6 @@ export class Store {
       signal: entry.joinSignal,
       observations: current ? observations(current) : entry.joinObservations,
     };
-  }
-  setJoinOutcome(id, outcome) {
-    const entry = this.#history.find((row) => row.id === id);
-    if (!entry)
-      throw Object.assign(new Error("Join attempt was not found."), {
-        status: 404,
-      });
-    entry.outcome = outcome;
-    return { ...entry };
   }
   requests(now) {
     this.#attempts = this.#attempts.filter((at) => at > now - 60000);

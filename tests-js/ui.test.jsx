@@ -650,7 +650,7 @@ test("the exact current server is marked and cannot be joined again", () => {
   );
 });
 
-test("join history records a rare or not-rare biome outcome", async () => {
+test("join history displays the biome captured by OCR", () => {
   vi.stubGlobal("EventSource", FakeEventSource);
   const join = {
     id: 7,
@@ -661,33 +661,16 @@ test("join history records a rare or not-rare biome outcome", async () => {
     alert: "cluster",
     signalState: "growing",
     growthPer10s: 6,
-    outcome: null,
+    biome: "Glitched",
+    biomeConfidence: 0.94,
+    biomeSource: "windows_ocr",
   };
-  const fetchMock = vi
-    .fn()
-    .mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({ token: "safe-token" }),
-    })
-    .mockResolvedValueOnce({
-      ok: true,
-      json: async () => ({ join: { ...join, outcome: "rare" } }),
-    });
-  vi.stubGlobal("fetch", fetchMock);
   render(<App />);
   sendRows([], 1, undefined, [join]);
   fireEvent.click(screen.getByRole("button", { name: /Join history/ }));
-  const outcome = screen.getByLabelText("Biome outcome for candidate-123");
-  fireEvent.change(outcome, { target: { value: "rare" } });
-  await waitFor(() => expect(outcome.value).toBe("rare"));
-  expect(fetchMock).toHaveBeenCalledTimes(2);
-  expect(fetchMock.mock.calls[1][0]).toBe("/api/joins/7/outcome");
-  expect(fetchMock.mock.calls[1][1].headers["X-Solseer-Token"]).toBe(
-    "safe-token",
-  );
-  expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({
-    outcome: "rare",
-  });
+  const biome = screen.getByText("Glitched");
+  expect(biome.className).toContain("detected");
+  expect(biome.title).toContain("94% match");
 });
 
 test("signal and detail share buttons copy a server link without marking it joined", async () => {

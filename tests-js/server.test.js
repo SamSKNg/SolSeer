@@ -128,45 +128,7 @@ test(
         "Content-Type": "application/json",
         "X-Solseer-Token": settings.token,
       };
-      const outcomeSave = await fetch(
-        `${base}/api/joins/${snapshot.joins[0].id}/outcome`,
-        {
-          method: "POST",
-          headers,
-          body: JSON.stringify({ outcome: "rare" }),
-        },
-      );
-      assert.equal(outcomeSave.status, 200);
-      assert.equal((await outcomeSave.json()).join.outcome, "rare");
-      assert.equal(
-        (await (await fetch(base + "/api/snapshot")).json()).joins[0].outcome,
-        "rare",
-      );
-      const feedbackDocument = JSON.parse(
-        await readFile(join(configDir, "biome-feedback.json"), "utf8"),
-      );
-      assert.equal(feedbackDocument.examples[0].outcome, "rare");
-      assert.equal(feedbackDocument.examples[0].join.jobId, "test-job");
-      assert.equal(
-        (
-          await fetch(`${base}/api/joins/${snapshot.joins[0].id}/outcome`, {
-            method: "POST",
-            headers,
-            body: JSON.stringify({ outcome: "unknown" }),
-          })
-        ).status,
-        400,
-      );
-      assert.equal(
-        (
-          await fetch(`${base}/api/joins/${snapshot.joins[0].id}/outcome`, {
-            method: "POST",
-            headers: { ...headers, "X-Solseer-Token": "bad" },
-            body: JSON.stringify({ outcome: "not_rare" }),
-          })
-        ).status,
-        403,
-      );
+      assert.equal(snapshot.joins[0].biome, null);
       const body = JSON.stringify({ cookie: dummy, confirmLocalStorage: true });
       for (const overrides of [
         { Origin: "http://evil.test" },

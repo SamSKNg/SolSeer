@@ -392,7 +392,7 @@ test("auto-join excludes the account's current server and chooses the next signa
     assert.deepEqual(joined, ["other-job"]);
   }));
 
-test("a selected OCR target biome pauses joins until its reading is stale", () =>
+test("a selected OCR target biome stays latched until another biome is recognized", () =>
   fixture(async (_notifications, folder) => {
     const joined = [];
     const notifications = new Notifications(folder, {
@@ -414,7 +414,7 @@ test("a selected OCR target biome pauses joins until its reading is stale", () =
     assert.deepEqual(joined, []);
     assert.equal(result.autoJoinPausedBiome, "Glitched");
 
-    const released = notifications.update({
+    const unclear = notifications.update({
       ...sample(2, [
         {
           ...row("cluster", "rare-signal"),
@@ -429,8 +429,8 @@ test("a selected OCR target biome pauses joins until its reading is stale", () =
       ]),
       automation: { biome: "Glitched", biomeFresh: false },
     });
-    assert.deepEqual(joined, ["rare-signal"]);
-    assert.equal(released.autoJoinPausedBiome, null);
+    assert.deepEqual(joined, []);
+    assert.equal(unclear.autoJoinPausedBiome, "Glitched");
 
     notifications.update({
       ...sample(3, [
@@ -445,7 +445,7 @@ test("a selected OCR target biome pauses joins until its reading is stale", () =
           signalState: "holding",
         },
       ]),
-      automation: { biome: "Glitched", biomeFresh: false },
+      automation: { biome: "Normal", biomeFresh: true },
     });
     assert.deepEqual(joined, ["rare-signal"]);
   }));

@@ -3,16 +3,14 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Imaging;
-using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Web.Script.Serialization;
 using Windows.Foundation;
-using Windows.Graphics.Imaging;
 using Windows.Media.Ocr;
-using Windows.Storage;
+using Windows.Graphics.Imaging;
 using Windows.Storage.Streams;
 
 internal static class SolseerScreenHelper
@@ -40,21 +38,10 @@ internal static class SolseerScreenHelper
         public UIntPtr ExtraInfo;
     }
 
-    [StructLayout(LayoutKind.Sequential)]
-    private struct KeyboardInput
-    {
-        public ushort VirtualKey;
-        public ushort ScanCode;
-        public uint Flags;
-        public uint Time;
-        public UIntPtr ExtraInfo;
-    }
-
     [StructLayout(LayoutKind.Explicit)]
     private struct InputData
     {
         [FieldOffset(0)] public MouseInput Mouse;
-        [FieldOffset(0)] public KeyboardInput Keyboard;
     }
 
     [StructLayout(LayoutKind.Sequential)]
@@ -68,25 +55,34 @@ internal static class SolseerScreenHelper
     private const uint MouseMove = 0x0001;
     private const uint MouseLeftDown = 0x0002;
     private const uint MouseLeftUp = 0x0004;
-    private const uint KeyboardKeyUp = 0x0002;
-    private const ushort VirtualKeyO = 0x4F;
+    private const uint PrintWindowRenderFullContent = 2;
     private static readonly JavaScriptSerializer Json = new JavaScriptSerializer();
-    private static readonly string TempPrefix = "solseer-ocr-" + Process.GetCurrentProcess().Id + "-";
     private static bool stopping;
     private static int playMatches;
-    private static int unclearBiomeScans;
-    private static int zoomPresses;
     private static DateTime lastClick = DateTime.MinValue;
-    private static DateTime lastZoom = DateTime.MinValue;
 
     [DllImport("user32.dll")] private static extern bool SetProcessDPIAware();
     [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
+    [DllImport("user32.dll")] private static extern bool EnumWindows(EnumWindowsCallback callback, IntPtr state);
+    [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr window);
     [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
     [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr window, out Rect rect);
     [DllImport("user32.dll")] private static extern IntPtr MonitorFromWindow(IntPtr window, uint flags);
     [DllImport("user32.dll", CharSet = CharSet.Auto)] private static extern bool GetMonitorInfo(IntPtr monitor, ref MonitorInfo info);
     [DllImport("user32.dll")] private static extern bool SetCursorPos(int x, int y);
+    [DllImport("user32.dll")] private static extern bool PrintWindow(IntPtr window, IntPtr deviceContext, uint flags);
+    [DllImport("gdi32.dll")] private static extern bool SetViewportOrgEx(IntPtr deviceContext, int x, int y, IntPtr previousPoint);
     [DllImport("user32.dll", SetLastError = true)] private static extern uint SendInput(uint inputCount, Input[] inputs, int inputSize);
+
+    private delegate bool EnumWindowsCallback(IntPtr window, IntPtr state);
+
+    [ComImport]
+    [Guid("905a0fef-bc53-11df-8c49-001e4fc686da")]
+    [InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IBufferByteAccess
+    {
+        void Buffer(out IntPtr value);
+    }
 
     private sealed class RobloxWindow
     {
@@ -100,8 +96,7 @@ internal static class SolseerScreenHelper
         public string Name;
         public int Width;
         public int Height;
-        public Rectangle BiomeRegion;
-        public Rectangle PlayRegion;
+        public Rectangle OcrRegion;
         public int PlayX;
         public int PlayY;
     }
@@ -127,10 +122,6 @@ internal static class SolseerScreenHelper
             Emit(Status("error", "Windows OCR could not start."));
             return 1;
         }
-        finally
-        {
-            DeleteTemporaryFiles();
-        }
     }
 
     private static ScreenProfile ProfileFor(string[] args)
@@ -141,8 +132,7 @@ internal static class SolseerScreenHelper
                 Name = "1080p",
                 Width = 1920,
                 Height = 1080,
-                BiomeRegion = new Rectangle(0, 780, 460, 170),
-                PlayRegion = new Rectangle(0, 820, 600, 250),
+                OcrRegion = new Rectangle(0, 780, 600, 290),
                 PlayX = 264,
                 PlayY = 1000
             };
@@ -151,8 +141,7 @@ internal static class SolseerScreenHelper
             Name = "1440p",
             Width = 2560,
             Height = 1440,
-            BiomeRegion = new Rectangle(0, 1080, 600, 220),
-            PlayRegion = new Rectangle(0, 1120, 760, 319),
+            OcrRegion = new Rectangle(0, 1080, 760, 359),
             PlayX = 342,
             PlayY = 1331
         };
@@ -171,7 +160,7 @@ internal static class SolseerScreenHelper
         {
             RobloxWindow window;
             string status;
-            if (!TryGetRobloxWindow(out window)) status = "roblox_not_foreground";
+            if (!TryGetRobloxWindow(out window)) status = "roblox_not_found";
             else if (!IsFullscreen(window, profile)) status = "maximize_resolution";
             else status = "scanning";
             if (status != previousStatus)
@@ -183,34 +172,16 @@ internal static class SolseerScreenHelper
             {
                 try
                 {
-                    string biomeText = await CaptureAndRead(engine, window, profile.BiomeRegion, "biome");
-                    string playText = autoStart
-                        ? await CaptureAndRead(engine, window, profile.PlayRegion, "play")
-                        : "";
-                    bool biomeFound = LooksLikeBiome(biomeText);
-                    bool playFound = LooksLikePlay(playText);
-                    if (autoStart)
-                    {
-                        playMatches = playFound ? playMatches + 1 : 0;
-                        if (biomeFound)
-                        {
-                            unclearBiomeScans = 0;
-                            zoomPresses = 0;
-                        }
-                        else if (playFound)
-                        {
-                            unclearBiomeScans = 0;
-                            zoomPresses = 0;
-                        }
-                        else unclearBiomeScans++;
-                    }
+                    string ocrText = await CaptureAndRead(engine, window, profile.OcrRegion);
+                    bool biomeFound = LooksLikeBiome(ocrText);
+                    bool playFound = LooksLikePlay(ocrText);
+                    playMatches = autoStart && playFound ? playMatches + 1 : 0;
                     bool clicked = false;
                     bool clickAttempted = false;
-                    bool zoomedOut = false;
                     if (autoStart && playMatches >= 2 && DateTime.UtcNow - lastClick >= TimeSpan.FromSeconds(15))
                     {
                         RobloxWindow current;
-                        if (TryGetRobloxWindow(out current) && current.Handle == window.Handle && IsFullscreen(current, profile))
+                        if (TryGetRobloxWindow(out current) && current.Handle == window.Handle && IsFullscreen(current, profile) && IsForeground(current))
                         {
                             clickAttempted = true;
                             clicked = ClickPlay(current, profile);
@@ -221,29 +192,14 @@ internal static class SolseerScreenHelper
                             }
                         }
                     }
-                    if (autoStart && !playFound && unclearBiomeScans >= 3 && zoomPresses < 8 && DateTime.UtcNow - lastZoom >= TimeSpan.FromMilliseconds(750))
-                    {
-                        RobloxWindow current;
-                        if (TryGetRobloxWindow(out current) && current.Handle == window.Handle && IsFullscreen(current, profile))
-                        {
-                            zoomedOut = PressO();
-                            if (zoomedOut)
-                            {
-                                zoomPresses++;
-                                lastZoom = DateTime.UtcNow;
-                            }
-                        }
-                    }
                     Dictionary<string, object> scan = new Dictionary<string, object>();
                     scan["kind"] = "scan";
                     scan["status"] = "scanning";
-                    scan["biomeText"] = biomeText;
+                    scan["biomeText"] = ocrText;
                     scan["biomeFound"] = biomeFound;
                     scan["playFound"] = playFound;
                     scan["clickAttempted"] = clickAttempted;
                     scan["clicked"] = clicked;
-                    scan["zoomedOut"] = zoomedOut;
-                    scan["zoomPresses"] = zoomPresses;
                     scan["autoStart"] = autoStart;
                     scan["resolution"] = profile.Name;
                     scan["at"] = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
@@ -270,7 +226,7 @@ internal static class SolseerScreenHelper
 
     private static string StatusMessage(string status, ScreenProfile profile)
     {
-        if (status == "roblox_not_foreground") return "Bring Roblox to the foreground.";
+        if (status == "roblox_not_found") return "Open Roblox to start biome OCR.";
         if (status == "maximize_resolution") return "Maximize Roblox on a " + profile.Width + "×" + profile.Height + " display.";
         return "Reading the Roblox window.";
     }
@@ -284,16 +240,39 @@ internal static class SolseerScreenHelper
     private static bool TryGetRobloxWindow(out RobloxWindow result)
     {
         result = null;
-        IntPtr handle = GetForegroundWindow();
-        if (handle == IntPtr.Zero) return false;
-        uint processId;
-        GetWindowThreadProcessId(handle, out processId);
-        try
+        List<IntPtr> handles = new List<IntPtr>();
+        EnumWindows(delegate(IntPtr candidate, IntPtr state)
         {
-            Process process = Process.GetProcessById((int)processId);
-            if (process.ProcessName.IndexOf("Roblox", StringComparison.OrdinalIgnoreCase) < 0) return false;
+            if (!IsWindowVisible(candidate)) return true;
+            uint candidateProcessId;
+            GetWindowThreadProcessId(candidate, out candidateProcessId);
+            try
+            {
+                Process process = Process.GetProcessById((int)candidateProcessId);
+                if (process.ProcessName.IndexOf("RobloxPlayerBeta", StringComparison.OrdinalIgnoreCase) >= 0)
+                    handles.Add(candidate);
+            }
+            catch { }
+            return true;
+        }, IntPtr.Zero);
+        if (handles.Count == 0) return false;
+        IntPtr foreground = GetForegroundWindow();
+        IntPtr handle = handles.Contains(foreground) ? foreground : IntPtr.Zero;
+        if (handle == IntPtr.Zero)
+        {
+            long largestArea = 0;
+            foreach (IntPtr candidate in handles)
+            {
+                Rect candidateBounds;
+                if (!GetWindowRect(candidate, out candidateBounds)) continue;
+                long width = Math.Max(0, candidateBounds.Right - candidateBounds.Left);
+                long height = Math.Max(0, candidateBounds.Bottom - candidateBounds.Top);
+                if (width * height <= largestArea) continue;
+                largestArea = width * height;
+                handle = candidate;
+            }
         }
-        catch { return false; }
+        if (handle == IntPtr.Zero) return false;
         Rect bounds;
         if (!GetWindowRect(handle, out bounds)) return false;
         IntPtr monitorHandle = MonitorFromWindow(handle, MonitorDefaultToNearest);
@@ -302,6 +281,11 @@ internal static class SolseerScreenHelper
         if (!GetMonitorInfo(monitorHandle, ref monitor)) return false;
         result = new RobloxWindow { Handle = handle, Bounds = bounds, Monitor = monitor.Monitor };
         return true;
+    }
+
+    private static bool IsForeground(RobloxWindow window)
+    {
+        return GetForegroundWindow() == window.Handle;
     }
 
     private static bool IsFullscreen(RobloxWindow window, ScreenProfile profile)
@@ -315,31 +299,47 @@ internal static class SolseerScreenHelper
             Math.Abs(window.Bounds.Bottom - window.Monitor.Bottom) <= 4;
     }
 
-    private static async Task<string> CaptureAndRead(OcrEngine engine, RobloxWindow window, Rectangle relative, string name)
+    private static async Task<string> CaptureAndRead(OcrEngine engine, RobloxWindow window, Rectangle relative)
     {
-        string path = Path.Combine(Path.GetTempPath(), TempPrefix + name + ".png");
-        try
+        using (Bitmap bitmap = new Bitmap(relative.Width, relative.Height, PixelFormat.Format32bppArgb))
         {
-            using (Bitmap bitmap = new Bitmap(relative.Width, relative.Height, PixelFormat.Format24bppRgb))
             using (Graphics graphics = Graphics.FromImage(bitmap))
             {
-                graphics.CopyFromScreen(window.Monitor.Left + relative.X, window.Monitor.Top + relative.Y, 0, 0, relative.Size, CopyPixelOperation.SourceCopy);
-                bitmap.Save(path, ImageFormat.Png);
-            }
-            StorageFile file = await Await(StorageFile.GetFileFromPathAsync(path));
-            using (IRandomAccessStream stream = await Await(file.OpenAsync(FileAccessMode.Read)))
-            {
-                BitmapDecoder decoder = await Await(BitmapDecoder.CreateAsync(stream));
-                using (SoftwareBitmap bitmap = await Await(decoder.GetSoftwareBitmapAsync(BitmapPixelFormat.Bgra8, BitmapAlphaMode.Premultiplied)))
+                if (IsForeground(window))
+                    graphics.CopyFromScreen(window.Monitor.Left + relative.X, window.Monitor.Top + relative.Y, 0, 0, relative.Size, CopyPixelOperation.SourceCopy);
+                else
                 {
-                    OcrResult result = await Await(engine.RecognizeAsync(bitmap));
-                    return result.Text ?? "";
+                    IntPtr deviceContext = graphics.GetHdc();
+                    try
+                    {
+                        SetViewportOrgEx(deviceContext, -relative.X, -relative.Y, IntPtr.Zero);
+                        if (!PrintWindow(window.Handle, deviceContext, PrintWindowRenderFullContent))
+                            throw new InvalidOperationException("The Roblox window could not be captured.");
+                    }
+                    finally { graphics.ReleaseHdc(deviceContext); }
                 }
             }
-        }
-        finally
-        {
-            try { File.Delete(path); } catch { }
+
+            Rectangle bounds = new Rectangle(0, 0, bitmap.Width, bitmap.Height);
+            BitmapData data = bitmap.LockBits(bounds, ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
+            byte[] pixels = new byte[bitmap.Width * bitmap.Height * 4];
+            try
+            {
+                for (int row = 0; row < bitmap.Height; row++)
+                    Marshal.Copy(IntPtr.Add(data.Scan0, row * data.Stride), pixels, row * bitmap.Width * 4, bitmap.Width * 4);
+            }
+            finally { bitmap.UnlockBits(data); }
+            Windows.Storage.Streams.Buffer buffer = new Windows.Storage.Streams.Buffer((uint)pixels.Length);
+            IntPtr destination;
+            ((IBufferByteAccess)(object)buffer).Buffer(out destination);
+            Marshal.Copy(pixels, 0, destination, pixels.Length);
+            buffer.Length = (uint)pixels.Length;
+            using (SoftwareBitmap softwareBitmap = SoftwareBitmap.CreateCopyFromBuffer(
+                buffer, BitmapPixelFormat.Bgra8, bitmap.Width, bitmap.Height, BitmapAlphaMode.Premultiplied))
+            {
+                OcrResult result = await Await(engine.RecognizeAsync(softwareBitmap));
+                return result.Text ?? "";
+            }
         }
     }
 
@@ -375,7 +375,7 @@ internal static class SolseerScreenHelper
         foreach (string word in words)
         {
             string candidate = Normalize(word);
-            if (candidate.Length >= 3 && Similarity(candidate, "PLAY") >= 0.72) return true;
+            if (candidate.Length >= 3 && Similarity(candidate, "PLAY") >= 0.70) return true;
         }
         return false;
     }
@@ -399,7 +399,7 @@ internal static class SolseerScreenHelper
             string candidate = Normalize(word);
             if (candidate.Length < 3) continue;
             foreach (string biome in biomes)
-                if (Similarity(candidate, biome) >= 0.72) return true;
+                if (Similarity(candidate, biome) >= 0.70) return true;
         }
         return false;
     }
@@ -434,28 +434,6 @@ internal static class SolseerScreenHelper
         return SendInput(1, new Input[] { input }, Marshal.SizeOf(typeof(Input))) == 1;
     }
 
-    private static bool PressO()
-    {
-        Input down = new Input();
-        down.Type = 1;
-        down.Data = new InputData
-        {
-            Keyboard = new KeyboardInput
-            {
-                VirtualKey = VirtualKeyO,
-                ScanCode = 0,
-                Flags = 0,
-                Time = 0,
-                ExtraInfo = UIntPtr.Zero
-            }
-        };
-        Input up = down;
-        up.Data.Keyboard.Flags = KeyboardKeyUp;
-        if (SendInput(1, new Input[] { down }, Marshal.SizeOf(typeof(Input))) != 1) return false;
-        Thread.Sleep(45);
-        return SendInput(1, new Input[] { up }, Marshal.SizeOf(typeof(Input))) == 1;
-    }
-
     private static bool ClickPlay(RobloxWindow window, ScreenProfile profile)
     {
         // SetCursorPos alone does not always generate the motion event Roblox's
@@ -476,9 +454,4 @@ internal static class SolseerScreenHelper
         return true;
     }
 
-    private static void DeleteTemporaryFiles()
-    {
-        foreach (string name in new string[] { "biome", "play" })
-            try { File.Delete(Path.Combine(Path.GetTempPath(), TempPrefix + name + ".png")); } catch { }
-    }
 }

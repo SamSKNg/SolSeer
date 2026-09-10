@@ -7,10 +7,11 @@ import {
   ScreenAutomation,
 } from "../src/server/screen-automation.js";
 
-test("biome OCR matching tolerates punctuation, spacing, and small OCR errors", () => {
+test("biome OCR matching uses the 70% threshold and tolerates OCR errors", () => {
   assert.equal(matchBiome("v4.958\n[SNOWY]\n[NIGHTTIME]").biome, "Snowy");
   assert.equal(matchBiome("[SAND ST0RM]").biome, "Sandstorm");
   assert.equal(matchBiome("C0RRUPTION").biome, "Corruption");
+  assert.equal(matchBiome("CORRUPTXYZ").confidence, 0.7);
   assert.equal(matchBiome("unrelated player text"), null);
 });
 
@@ -41,18 +42,24 @@ test("biome OCR stays active with Auto-Start off and keeps the last reading", ()
     `${JSON.stringify({ kind: "scan", biomeText: "[GL1TCHED]", at: now })}\n`,
   );
   assert.equal(automation.snapshot().biome, "Glitched");
+  assert.equal(automation.snapshot().biomeText, "[GL1TCHED]");
   assert.equal(automation.snapshot().biomeFresh, true);
+  child.stdout.write(
+    `${JSON.stringify({ kind: "scan", biomeText: "PLAY", playFound: true, at: now })}\n`,
+  );
+  assert.equal(automation.snapshot().message, "Play screen detected.");
+  assert.equal(automation.snapshot().playVisible, true);
+  assert.equal(automation.snapshot().playAt, now);
   now += 15001;
   assert.equal(automation.snapshot().biome, "Glitched");
   assert.equal(automation.snapshot().biomeFresh, false);
   child.stdout.write(
-    `${JSON.stringify({ kind: "scan", biomeText: "unreadable", zoomedOut: true, zoomPresses: 2, at: now })}\n`,
+    `${JSON.stringify({ kind: "scan", biomeText: "unreadable", at: now })}\n`,
   );
   assert.equal(automation.snapshot().biome, "Glitched");
-  assert.equal(automation.snapshot().zoomPresses, 2);
   assert.equal(
     automation.snapshot().message,
-    "Biome unclear; zooming Roblox out.",
+    "Reading the maximized Roblox window.",
   );
   automation.stop();
   assert.equal(child.killed, true);

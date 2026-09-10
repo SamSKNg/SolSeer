@@ -55,7 +55,7 @@ export function matchBiome(text) {
       }
     }
   }
-  return best?.confidence >= 0.72 ? best : null;
+  return best?.confidence >= 0.7 ? best : null;
 }
 
 export class ScreenAutomation {
@@ -83,11 +83,12 @@ export class ScreenAutomation {
       message: "Biome OCR is starting.",
       biome: null,
       biomeConfidence: null,
+      biomeText: null,
       biomeAt: null,
+      playVisible: false,
+      playAt: null,
       lastScanAt: null,
       lastAutoStartAt: null,
-      lastZoomAt: null,
-      zoomPresses: 0,
     };
   }
 
@@ -189,19 +190,20 @@ export class ScreenAutomation {
             : event.clickAttempted
               ? "Play detected, but Windows did not accept the click."
               : event.playFound
-                ? "Play detected; confirming before click."
-                : event.zoomedOut
-                  ? "Biome unclear; zooming Roblox out."
-                  : "Reading the maximized Roblox window.",
+                ? this.autoStart
+                  ? "Play detected; confirming before click."
+                  : "Play screen detected."
+                : "Reading the maximized Roblox window.",
           biome: matched?.biome ?? this.state.biome,
           biomeConfidence: matched?.confidence ?? this.state.biomeConfidence,
+          biomeText: matched
+            ? String(event.biomeText ?? "").slice(0, 1000)
+            : this.state.biomeText,
           biomeAt: matched ? at : this.state.biomeAt,
+          playVisible: event.playFound === true,
+          playAt: event.playFound ? at : this.state.playAt,
           lastScanAt: at,
           lastAutoStartAt: event.clicked ? at : this.state.lastAutoStartAt,
-          lastZoomAt: event.zoomedOut ? at : this.state.lastZoomAt,
-          zoomPresses: Number.isInteger(event.zoomPresses)
-            ? event.zoomPresses
-            : this.state.zoomPresses,
         };
       }
       this.onUpdate();

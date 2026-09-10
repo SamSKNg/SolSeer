@@ -159,11 +159,8 @@ export function App() {
   const drawerRef = useRef(null);
   const copyTimer = useRef(null);
   const autoJoinRequest = useRef(null);
-  const feedbackRequest = useRef(null);
   const [autoJoinBusy, setAutoJoinBusy] = useState(false);
   const [autoJoinError, setAutoJoinError] = useState("");
-  const [feedbackBusy, setFeedbackBusy] = useState(null);
-  const [feedbackError, setFeedbackError] = useState("");
   const notificationError = useNotifications(data, (id) => {
     setTab("servers");
     setSelected(id);
@@ -195,7 +192,6 @@ export function App() {
       stream.close();
       clearTimeout(copyTimer.current);
       autoJoinRequest.current?.abort();
-      feedbackRequest.current?.abort();
     };
   }, []);
   const togglePreference = async (key) => {
@@ -260,52 +256,11 @@ export function App() {
     if (
       !enabled &&
       !window.confirm(
-        `Auto-Start uses OCR, keyboard zoom, and a mouse click only while Roblox is the foreground maximized window on a ${resolution} display. Keep Roblox maximized and do not enable this while using another Roblox window. Continue?`,
+        `Auto-Start clicks Play only while Roblox is the foreground maximized window on a ${resolution} display. Biome and Play-marker OCR continue in the background. Continue?`,
       )
     )
       return;
     togglePreference("autoStart");
-  };
-  const setBiomeOutcome = async (joinId, outcome) => {
-    if (feedbackBusy != null) return;
-    const controller = new AbortController();
-    feedbackRequest.current?.abort();
-    feedbackRequest.current = controller;
-    setFeedbackBusy(joinId);
-    setFeedbackError("");
-    try {
-      const settingsResponse = await fetch("/api/settings", {
-        signal: controller.signal,
-        cache: "no-store",
-      });
-      if (!settingsResponse.ok) throw new Error();
-      const { token } = await settingsResponse.json();
-      const response = await fetch(`/api/joins/${joinId}/outcome`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Solseer-Token": token,
-        },
-        body: JSON.stringify({ outcome: outcome || null }),
-        signal: controller.signal,
-      });
-      if (!response.ok) throw new Error();
-      const { join } = await response.json();
-      if (!controller.signal.aborted)
-        setData((current) => ({
-          ...current,
-          joins: current.joins.map((entry) =>
-            entry.id === join.id ? { ...entry, outcome: join.outcome } : entry,
-          ),
-        }));
-    } catch {
-      if (!controller.signal.aborted)
-        setFeedbackError("Could not save biome outcome. Try again.");
-    } finally {
-      if (!controller.signal.aborted) setFeedbackBusy(null);
-      if (feedbackRequest.current === controller)
-        feedbackRequest.current = null;
-    }
   };
   useEffect(() => {
     if (!selected) return;
@@ -659,7 +614,7 @@ export function App() {
                       data.notifications?.preferences.autoStart,
                     )}
                     disabled={autoJoinBusy || !data.notifications?.preferences}
-                    title={`Windows only. With Roblox foreground and maximized at ${data.notifications?.preferences.ocrResolution === "1080p" ? "1920 × 1080" : "2560 × 1440"}, reads the biome label, zooms out if OCR is unclear, and clicks Play after two fuzzy matches.`}
+                    title={`Windows only. With Roblox maximized at ${data.notifications?.preferences.ocrResolution === "1080p" ? "1920 × 1080" : "2560 × 1440"}, one persistent OCR pass reads both the biome and Play marker. Play input requires Roblox to be foreground.`}
                     onClick={toggleAutoStart}
                   >
                     <ScanLine size={15} aria-hidden="true" />
@@ -1026,8 +981,8 @@ export function App() {
               <div className="panel-heading">
                 <h2>Opened servers</h2>
                 <span className="subtle">
-                  Latest 200 attempts · biome labels save locally with graph
-                  evidence
+                  Latest 200 attempts · join biomes are captured by OCR and
+                  saved locally with graph evidence
                 </span>
               </div>
               <div className="table-scroll">
@@ -1039,7 +994,7 @@ export function App() {
                       <th>PLAYERS</th>
                       <th>SIGNAL AT CLICK</th>
                       <th>PACE /10s</th>
-                      <th>BIOME OUTCOME</th>
+                      <th>BIOME AT JOIN</th>
                       <th />
                     </tr>
                   </thead>
@@ -1056,19 +1011,21 @@ export function App() {
                         </td>
                         <td>{pace(j)}</td>
                         <td>
-                          <select
-                            className={`outcome-select ${j.outcome ?? "unmarked"}`}
-                            aria-label={`Biome outcome for ${j.jobId}`}
-                            value={j.outcome ?? ""}
-                            disabled={feedbackBusy != null}
-                            onChange={(event) =>
-                              setBiomeOutcome(j.id, event.target.value)
+                          <span
+                            className={`join-biome ${j.biome ? "detected" : "pending"}`}
+                            style={
+                              j.biome
+                                ? { "--biome-color": biomeColors[j.biome] }
+                                : undefined
+                            }
+                            title={
+                              j.biome
+                                ? `Windows OCR · ${Math.round((j.biomeConfidence ?? 0) * 100)}% match`
+                                : "Waiting for account presence and a biome OCR match"
                             }
                           >
-                            <option value="">Unmarked</option>
-                            <option value="rare">Rare biome</option>
-                            <option value="not_rare">Not rare</option>
-                          </select>
+                            {j.biome ?? "Waiting for OCR"}
+                          </span>
                         </td>
                         <td>
                           <Join
@@ -1090,11 +1047,6 @@ export function App() {
                     Your manual and automatic join attempts will appear here for
                     this session.
                   </div>
-                )}
-                {feedbackError && (
-                  <p className="feedback-error" role="alert">
-                    {feedbackError}
-                  </p>
                 )}
               </div>
             </section>

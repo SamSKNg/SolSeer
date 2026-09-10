@@ -121,6 +121,17 @@ await writeFile(
   join(app, "START-HERE.txt"),
   `SOLSEER — WINDOWS PORTABLE\r\n\r\nExtract the entire ZIP. Double-click Start solseer.cmd. No Node installation or npm command needed.\r\nYour browser opens at http://localhost:3000. Keep the console open; Ctrl+C stops the app.\r\nIf port 3000 is busy, stop the previous app first.\r\nJoining requires Roblox installed and signed in. Join and copied server links use roblox:// direct-app links; allow the browser launch prompt if you intended to join. Account presence marks the exact current server when Roblox exposes its Job ID.\r\n\r\nBiome OCR runs whenever solseer is open and requires foreground, maximized Roblox at the 1920x1080 or 2560x1440 resolution selected in Settings. Auto-Start is optional and off by default; it adds zooming with O after repeated unclear in-game reads and clicks Play through Windows SendInput after two fuzzy matches. Configure biome targets and OCR matching in Settings. Every join pauses further auto-joins for up to 60 seconds while Play and the game view load.\r\n\r\nPaste your own Roblox cookie only in Settings. It is saved as plaintext at %LOCALAPPDATA%\\solseer\\.env, outside this folder. Never share that file.\r\nNo cookie, join history, or biome feedback is included in this distribution. Clearing settings disables the cookie but does not erase older project .env files or backups.\r\nServer observations and joins last only for the running session. Biome labels, Auto-Start, and target preferences are saved locally outside this folder.\r\n\r\nRuntime: ${match[2]} (SHA-256 verified against nodejs.org). Third-party notices are in licenses.\r\nThis is a portable launcher with an unsigned local OCR helper, not a signed installer or native desktop window.\r\n`,
 );
+const startHerePath = join(app, "START-HERE.txt");
+const startHere = await readFile(startHerePath, "utf8");
+await writeFile(
+  startHerePath,
+  startHere
+    .replace(
+      "Biome OCR runs whenever solseer is open and requires foreground, maximized Roblox at the 1920x1080 or 2560x1440 resolution selected in Settings. Auto-Start is optional and off by default; it adds zooming with O after repeated unclear in-game reads and clicks Play through Windows SendInput after two fuzzy matches.",
+      "Biome OCR runs whenever solseer is open and reads a combined biome-and-Play region from maximized Roblox at the 1920x1080 or 2560x1440 resolution selected in Settings, including while another app is foreground. Auto-Start is optional and only enables the foreground-safe Play click; no zoom keys are sent.",
+    )
+    .replace("biome feedback", "biome observations"),
+);
 const zip = resolve(
   releases,
   `solseer-v${version}-windows-${process.arch}.zip`,

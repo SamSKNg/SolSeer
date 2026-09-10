@@ -138,11 +138,17 @@ export class Notifications {
       this.#autoJoinCooldownServerId = null;
     }
     const autoJoinCoolingDown = this.#autoJoinCooldownUntil > snapshot.now;
-    // Keep the last biome available for display, but never let a stale OCR
-    // value hold Auto-join paused indefinitely.
-    const detectedBiome = snapshot.automation?.biomeFresh
-      ? (snapshot.automation.biome ?? null)
-      : null;
+    // A rare biome remains authoritative until OCR positively recognizes a
+    // different biome. An unclear/stale frame is not evidence that it ended.
+    const unavailable = [
+      "roblox_not_found",
+      "unsupported",
+      "ocr_unavailable",
+      "error",
+    ].includes(snapshot.automation?.status);
+    const detectedBiome = unavailable
+      ? null
+      : (snapshot.automation?.biome ?? null);
     const targetBiome = this.#preferences.autoJoin
       ? this.#preferences.biomeTargets.find(
           (biome) => normalizeBiome(biome) === normalizeBiome(detectedBiome),

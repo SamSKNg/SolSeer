@@ -24,6 +24,7 @@ export class PresenceTracker {
       inExperience: false,
       placeId: null,
       serverId: null,
+      serverAt: null,
       lastLocation: null,
       checkedAt: null,
       lastSuccessfulAt: null,
@@ -124,6 +125,13 @@ export class PresenceTracker {
         JOB_ID.test(presence.gameId)
           ? presence.gameId
           : null;
+      const observedAt = this.now();
+      const serverAt =
+        serverId && serverId === this.state.serverId
+          ? this.state.serverAt
+          : serverId
+            ? observedAt
+            : null;
       const type = Number(presence.userPresenceType);
       this.state = {
         available: true,
@@ -142,12 +150,13 @@ export class PresenceTracker {
         inExperience,
         placeId,
         serverId,
+        serverAt,
         lastLocation:
           typeof presence.lastLocation === "string"
             ? presence.lastLocation.slice(0, 200)
             : null,
-        checkedAt: this.now(),
-        lastSuccessfulAt: this.now(),
+        checkedAt: observedAt,
+        lastSuccessfulAt: observedAt,
         error: null,
       };
     } catch (error) {

@@ -33,6 +33,7 @@ test("account presence resolves the exact Sol's RNG Job ID", async () => {
   const current = await tracker.refresh();
   assert.equal(current.status, "in_experience");
   assert.equal(current.serverId, "exact-job-id");
+  assert.equal(current.serverAt, 1234);
   assert.equal(current.username, "Seer");
   assert.equal(current.checkedAt, 1234);
   await tracker.refresh();

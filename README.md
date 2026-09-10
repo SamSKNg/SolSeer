@@ -18,12 +18,12 @@ You get:
 - Early leads and rapid-filling signals in a carousel or a numbered card index, plus an actionable corner notice. Switch with **Carousel / Cards** above Signals to watch; both views sort by **player count, highest first**, with signal priority breaking population ties, and share Join/Copy actions. The choice lasts while the page is open, including navigation between app pages; a reload defaults to the carousel.
 - Population graphs, observation age, open slots, and a plain-English reason for each signal.
 - Join/rejoin buttons, copyable server links, and a record of join attempts for the session.
-- Rare biome / Not rare labels on join attempts, saved locally with their population graph evidence for future analysis.
+- Automatic join-time biome OCR, saved locally with raw OCR and population graph evidence for future analysis.
 - Optional desktop notifications and opt-in Windows auto-join, so you don't have to stare at the page.
 - Exact account-presence tracking, a **You are here** marker, and current-server exclusion for joins.
 - Always-on 1080p/1440p fullscreen biome OCR, optional Play automation, and user-selected biomes that pause auto-join.
 
-Population signals still do not confirm a biome. A separate Windows-only OCR helper reads the visible biome label from the foreground Roblox window even when Auto-Start is off; it does not inject into Roblox. Auto-Start controls only the optional mouse and keyboard automation. A friend group joining together can look like a rare-biome rush, and OCR can misread stylized text. False positives are part of the tradeoff here.
+Population signals still do not confirm a biome. A separate Windows-only OCR helper reads the visible biome label from the Roblox window, including while another app is foreground, even when Auto-Start is off; it does not inject into Roblox. Auto-Start controls only the optional mouse and keyboard automation. A friend group joining together can look like a rare-biome rush, and OCR can misread stylized text. False positives are part of the tradeoff here.
 
 ### joining a server
 
@@ -35,7 +35,7 @@ On Windows, the **Auto-join** toggle beside **Signals to watch** launches the in
 
 With a valid cookie, solseer checks the configured account's Roblox presence every five seconds. When Roblox reports the exact Sol's RNG Job ID, a compact biome-colored current-server card appears below the tracker statistics with large server, username, and biome labels. That server also gets a **You are here** marker and its Join control is disabled. Auto-join excludes it and refreshes presence once more immediately before launching another server. Presence can lag or hide the Job ID, and private/reserved instances may not appear in the public list.
 
-Biome OCR runs whenever solseer is open and works only while Roblox is the foreground maximized window at the **1920 × 1080** or **2560 × 1440** resolution selected in Settings. The adjacent **Auto-Start** toggle is separate and off by default. When enabled, it also OCRs the Play-button region and, after two fuzzy matches, sends a short horizontal mouse-motion sweep so Roblox enters the button's hover state, then uses the Windows `SendInput` path to press and release Play. If three consecutive in-game reads cannot recognize a known biome, Auto-Start taps `O` up to eight times to zoom out; Play-screen recognition suppresses those key presses. The helper never captures the rest of the desktop; cropped frames are temporary and deleted immediately after OCR. The last recognized biome remains visible when a later frame cannot be read, but only a fresh target-biome reading pauses Auto-join; when that reading expires or another biome is recognized, Auto-join resumes with the strongest signal that arrived during the pause.
+Biome OCR runs whenever solseer is open and locates a maximized Roblox window at the **1920 × 1080** or **2560 × 1440** resolution selected in Settings, without requiring Roblox to remain foreground. One combined in-memory crop and one OCR operation continuously classify both known biomes and the Play marker at a 70% fuzzy-match threshold. The adjacent **Auto-Start** toggle only enables the foreground-safe Play click; it does not start a second OCR pipeline or send zoom keys. A selected target biome remains an Auto-join veto until OCR positively recognizes a different biome; an unclear or stale frame cannot release the pause.
 
 Every manual or automatic join starts a **60-second auto-join cooldown**, preventing another signal from switching servers while Roblox is waiting at or loading past the Play screen. When Auto-Start has clicked Play and a later biome reading confirms the game view is ready, that cooldown ends early. The current-server card shows the remaining cooldown when presence is available.
 
@@ -173,7 +173,7 @@ Desktop alerts fire once per signal episode, with one extra alert for a rapid-fi
 
 **Saved locally:** cookie configuration, notification/auto-join preferences, Auto-Start mode, and the biome target list.
 
-Biome feedback is also saved locally in `biome-feedback.json` beside the settings file. Each labeled example contains the Job ID, join-time signal fields, and up to 120 recent public population observations. It contains no Roblox cookie or account identity. Changing a label replaces that example; choosing **Unmarked** removes it from the collection.
+When account presence confirms that a join reached its intended Job ID, the first subsequent biome OCR match is saved locally in `biome-observations.json` beside the settings file. Each observation contains the detected biome, OCR confidence and raw text, join-time signal fields, and up to 120 recent public population observations. It contains no Roblox cookie or account identity.
 
 **Session only:** population history, signal holds, notification/auto-join deduplication, join attempts, account-presence state, OCR results, joined/current markers, and local request/cooldown tracking. A refresh or another tab shares the running backend session. Restarting the backend clears it. A recorded join means solseer attempted the handoff; the presence marker is separate evidence that Roblox reports the configured account in that Job ID.
 

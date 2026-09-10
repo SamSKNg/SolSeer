@@ -218,10 +218,11 @@ export function NotificationSettings({ initial, token, ready }) {
         <div className="settings-divider" aria-hidden="true" />
         <h3>Fullscreen OCR and biome targets</h3>
         <p className="subtle">
-          Biome OCR always reads a fixed region of a foreground, maximized
-          Roblox window. Auto-Start additionally clicks Play after two fuzzy OCR
-          matches. If the detected biome is selected below, automatic server
-          joins pause until that target is no longer detected.
+          Biome OCR reads a fixed region of a maximized Roblox window, including
+          while another app is foreground. The same persistent OCR pass detects
+          both biomes and the Play marker. Auto-Start only clicks Play when
+          Roblox itself is foreground. A selected target pauses automatic joins
+          until OCR recognizes a different biome.
         </p>
         <div
           className="resolution-options"

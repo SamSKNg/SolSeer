@@ -2,16 +2,18 @@ import { readFileSync } from "node:fs";
 import { mkdir, rename, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
+import { BIOMES } from "../shared/biomes.js";
 
 const MAX_EXAMPLES = 2000;
 
 const validDocument = (value) =>
-  value?.version === 1 &&
+  value?.version === 2 &&
   Array.isArray(value.examples) &&
   value.examples.every(
     (example) =>
       typeof example?.feedbackId === "string" &&
-      ["rare", "not_rare"].includes(example.outcome),
+      BIOMES.includes(example.biome) &&
+      example.source === "windows_ocr",
   );
 
 export class FeedbackCollector {
@@ -20,7 +22,7 @@ export class FeedbackCollector {
 
   constructor(directory) {
     this.directory = directory;
-    this.path = join(directory, "biome-feedback.json");
+    this.path = join(directory, "biome-observations.json");
     try {
       const document = JSON.parse(readFileSync(this.path, "utf8"));
       if (validDocument(document))
@@ -35,23 +37,20 @@ export class FeedbackCollector {
     this.#write = this.#write
       .catch(() => {})
       .then(async () => {
-        if (example.outcome == null) this.#examples.delete(example.feedbackId);
-        else {
-          this.#examples.delete(example.feedbackId);
-          this.#examples.set(example.feedbackId, example);
-          while (this.#examples.size > MAX_EXAMPLES)
-            this.#examples.delete(this.#examples.keys().next().value);
-        }
+        this.#examples.delete(example.feedbackId);
+        this.#examples.set(example.feedbackId, example);
+        while (this.#examples.size > MAX_EXAMPLES)
+          this.#examples.delete(this.#examples.keys().next().value);
         const temporary = join(
           this.directory,
-          `biome-feedback-${randomUUID()}.tmp`,
+          `biome-observation-${randomUUID()}.tmp`,
         );
         try {
           await mkdir(this.directory, { recursive: true, mode: 0o700 });
           await writeFile(
             temporary,
             JSON.stringify({
-              version: 1,
+              version: 2,
               examples: [...this.#examples.values()],
             }),
             { flag: "wx", mode: 0o600 },
