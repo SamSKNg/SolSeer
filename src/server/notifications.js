@@ -138,7 +138,11 @@ export class Notifications {
       this.#autoJoinCooldownServerId = null;
     }
     const autoJoinCoolingDown = this.#autoJoinCooldownUntil > snapshot.now;
-    const detectedBiome = snapshot.automation?.biome ?? null;
+    // Keep the last biome available for display, but never let a stale OCR
+    // value hold Auto-join paused indefinitely.
+    const detectedBiome = snapshot.automation?.biomeFresh
+      ? (snapshot.automation.biome ?? null)
+      : null;
     const targetBiome = this.#preferences.autoJoin
       ? this.#preferences.biomeTargets.find(
           (biome) => normalizeBiome(biome) === normalizeBiome(detectedBiome),
@@ -161,8 +165,10 @@ export class Notifications {
           rank: 0,
           misses: 0,
           autoJoined: false,
+          blockedByTargetBiome: false,
         };
-        if (rank > episode.rank && eligible(row)) {
+        const actionableUpgrade = rank > episode.rank && eligible(row);
+        if (actionableUpgrade) {
           if (this.#preferences.enabled && this.#preferences[row.alert]) {
             // Keep only the newest level for a server waiting to be delivered.
             this.#pending = this.#pending.filter(
@@ -170,24 +176,31 @@ export class Notifications {
             );
             this.#pending.push(eventFor(row, snapshot));
           }
-          const autoJoinTypeEnabled =
-            row.alert === "cluster"
-              ? this.#preferences.autoJoinCluster
-              : this.#preferences.autoJoinPotential;
-          if (
-            this.#preferences.autoJoin &&
-            autoJoinTypeEnabled &&
-            row.id !== snapshot.currentServerId &&
-            !targetBiome &&
-            !autoJoinCoolingDown &&
-            !episode.autoJoined
-          )
-            autoJoinCandidates.push({ row, episode });
         }
+        const autoJoinTypeEnabled =
+          row.alert === "cluster"
+            ? this.#preferences.autoJoinCluster
+            : this.#preferences.autoJoinPotential;
+        const autoJoinEligible =
+          this.#preferences.autoJoin &&
+          autoJoinTypeEnabled &&
+          row.id !== snapshot.currentServerId &&
+          isActionable(row) &&
+          !episode.autoJoined;
+        if (autoJoinEligible && targetBiome && actionableUpgrade)
+          episode.blockedByTargetBiome = true;
+        else if (
+          autoJoinEligible &&
+          !targetBiome &&
+          !autoJoinCoolingDown &&
+          (actionableUpgrade || episode.blockedByTargetBiome)
+        )
+          autoJoinCandidates.push({ row, episode });
         this.#episodes.set(row.id, {
           rank: Math.max(rank, episode.rank),
           misses: 0,
           autoJoined: episode.autoJoined,
+          blockedByTargetBiome: episode.blockedByTargetBiome,
         });
       }
       for (const [id, episode] of this.#episodes) {
@@ -219,6 +232,12 @@ export class Notifications {
           })
           .catch(() => {});
       }
+      // Releasing a target-biome pause is one decision: choose the strongest
+      // waiting signal above, then discard the rest so Roblox cannot be
+      // switched again on each following poll.
+      if (!targetBiome && !autoJoinCoolingDown)
+        for (const episode of this.#episodes.values())
+          episode.blockedByTargetBiome = false;
     }
     // Revalidate on every heartbeat AND immediately before claim. A held card is
     // not permission to deliver stale or no-longer-actionable advice.

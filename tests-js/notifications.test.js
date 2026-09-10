@@ -392,7 +392,7 @@ test("auto-join excludes the account's current server and chooses the next signa
     assert.deepEqual(joined, ["other-job"]);
   }));
 
-test("a selected OCR target biome vetoes automatic joins", () =>
+test("a selected OCR target biome pauses joins until its reading is stale", () =>
   fixture(async (_notifications, folder) => {
     const joined = [];
     const notifications = new Notifications(folder, {
@@ -405,11 +405,49 @@ test("a selected OCR target biome vetoes automatic joins", () =>
       biomeTargets: ["Glitched", "Dreamspace"],
     });
     const result = notifications.update({
-      ...sample(1, [row("cluster", "rare-signal")]),
+      ...sample(1, [
+        row("cluster", "rare-signal"),
+        row("potential", "early-signal"),
+      ]),
       automation: { biome: "Glitched", biomeFresh: true },
     });
     assert.deepEqual(joined, []);
     assert.equal(result.autoJoinPausedBiome, "Glitched");
+
+    const released = notifications.update({
+      ...sample(2, [
+        {
+          ...row("cluster", "rare-signal"),
+          notificationEligible: false,
+          signalState: "holding",
+        },
+        {
+          ...row("potential", "early-signal"),
+          notificationEligible: false,
+          signalState: "holding",
+        },
+      ]),
+      automation: { biome: "Glitched", biomeFresh: false },
+    });
+    assert.deepEqual(joined, ["rare-signal"]);
+    assert.equal(released.autoJoinPausedBiome, null);
+
+    notifications.update({
+      ...sample(3, [
+        {
+          ...row("cluster", "rare-signal"),
+          notificationEligible: false,
+          signalState: "holding",
+        },
+        {
+          ...row("potential", "early-signal"),
+          notificationEligible: false,
+          signalState: "holding",
+        },
+      ]),
+      automation: { biome: "Glitched", biomeFresh: false },
+    });
+    assert.deepEqual(joined, ["rare-signal"]);
   }));
 
 test("join cooldown blocks another auto-join until startup completes or sixty seconds pass", () =>
