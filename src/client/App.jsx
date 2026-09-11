@@ -256,7 +256,7 @@ export function App() {
     if (
       !enabled &&
       !window.confirm(
-        `Auto-Start clicks Play only while Roblox is the foreground maximized window on a ${resolution} display. Biome and Play-marker OCR continue in the background. Continue?`,
+        `Auto-Start clicks Play while Roblox is the foreground maximized window on a ${resolution} display. Biome and Play-marker OCR pause when you switch to another app. Continue?`,
       )
     )
       return;
@@ -530,6 +530,19 @@ export function App() {
               data-reveal="visible"
               style={{ "--biome-color": currentBiomeColor }}
             >
+              <div className="current-server-aura" aria-hidden="true">
+                {Array.from({ length: 12 }, (_, index) => (
+                  <i
+                    key={index}
+                    style={{
+                      "--particle-y": `${8 + ((index * 29) % 84)}%`,
+                      "--particle-delay": `${-index * 0.83}s`,
+                      "--particle-duration": `${6 + (index % 4)}s`,
+                      "--particle-size": `${2 + (index % 3)}px`,
+                    }}
+                  />
+                ))}
+              </div>
               <div className="current-server-card-icon" aria-hidden="true">
                 <MapPin size={19} />
               </div>
@@ -583,10 +596,20 @@ export function App() {
                   {data.automation && (
                     <p className="ocr-status ocr-status-inline" role="status">
                       <ScanLine size={14} aria-hidden="true" />
-                      {data.automation?.biome
-                        ? `${data.automation.biome}${data.automation.biomeFresh ? " · live OCR" : " · last OCR"}`
-                        : data.automation?.message ||
-                          "Starting fullscreen OCR…"}
+                      {data.automation.status !== "scanning"
+                        ? data.automation.message
+                        : data.automation?.biome
+                          ? `${data.automation.biome}${data.automation.biomeFresh ? " · live OCR" : " · last OCR"}`
+                          : data.automation?.message ||
+                            "Starting fullscreen OCR…"}
+                      {data.automation.lastScanAt != null && (
+                        <span title="Text similarity to the closest known biome, not an OCR accuracy probability.">
+                          {" · "}
+                          {data.automation.scanConfidence == null
+                            ? "no readable text"
+                            : `${Math.round(data.automation.scanConfidence * 100)}% match (${data.automation.scanBiome})`}
+                        </span>
+                      )}
                     </p>
                   )}
                   <span className="subtle">
@@ -614,7 +637,7 @@ export function App() {
                       data.notifications?.preferences.autoStart,
                     )}
                     disabled={autoJoinBusy || !data.notifications?.preferences}
-                    title={`Windows only. With Roblox maximized at ${data.notifications?.preferences.ocrResolution === "1080p" ? "1920 × 1080" : "2560 × 1440"}, one persistent OCR pass reads both the biome and Play marker. Play input requires Roblox to be foreground.`}
+                    title={`Windows only. With Roblox foreground and maximized at ${data.notifications?.preferences.ocrResolution === "1080p" ? "1920 × 1080" : "2560 × 1440"}, one OCR pass reads both the biome and Play marker. Scanning pauses while another app is foreground.`}
                     onClick={toggleAutoStart}
                   >
                     <ScanLine size={15} aria-hidden="true" />

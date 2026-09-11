@@ -23,7 +23,7 @@ You get:
 - Exact account-presence tracking, a **You are here** marker, and current-server exclusion for joins.
 - Always-on 1080p/1440p fullscreen biome OCR, optional Play automation, and user-selected biomes that pause auto-join.
 
-Population signals still do not confirm a biome. A separate Windows-only OCR helper reads the visible biome label from the Roblox window, including while another app is foreground, even when Auto-Start is off; it does not inject into Roblox. Auto-Start controls only the optional mouse and keyboard automation. A friend group joining together can look like a rare-biome rush, and OCR can misread stylized text. False positives are part of the tradeoff here.
+Population signals still do not confirm a biome. A separate Windows-only OCR helper reads the visible biome label while Roblox is foreground, even when Auto-Start is off; it does not inject into Roblox. Auto-Start controls only the optional Play click. A friend group joining together can look like a rare-biome rush, and OCR can misread stylized text. False positives are part of the tradeoff here.
 
 ### joining a server
 
@@ -35,7 +35,7 @@ On Windows, the **Auto-join** toggle beside **Signals to watch** launches the in
 
 With a valid cookie, solseer checks the configured account's Roblox presence every five seconds. When Roblox reports the exact Sol's RNG Job ID, a compact biome-colored current-server card appears below the tracker statistics with large server, username, and biome labels. That server also gets a **You are here** marker and its Join control is disabled. Auto-join excludes it and refreshes presence once more immediately before launching another server. Presence can lag or hide the Job ID, and private/reserved instances may not appear in the public list.
 
-Biome OCR runs whenever solseer is open and locates a maximized Roblox window at the **1920 × 1080** or **2560 × 1440** resolution selected in Settings, without requiring Roblox to remain foreground. One combined in-memory crop and one OCR operation continuously classify both known biomes and the Play marker at a 70% fuzzy-match threshold. The adjacent **Auto-Start** toggle only enables the foreground-safe Play click; it does not start a second OCR pipeline or send zoom keys. A selected target biome remains an Auto-join veto until OCR positively recognizes a different biome; an unclear or stale frame cannot release the pause.
+Biome OCR reads the foreground, maximized Roblox window at the **1920 × 1080** or **2560 × 1440** resolution selected in Settings. Scanning pauses when you switch apps and resumes when Roblox returns to foreground. One combined in-memory screen crop and one OCR operation classify both known biomes and the Play marker at a 70% fuzzy-match threshold, with a 500 ms wait after each cycle. The adjacent **Auto-Start** toggle only enables the Play click; it does not start a second OCR pipeline or send zoom keys. A selected target biome remains an Auto-join veto through focus loss and unclear or stale frames, until OCR recognizes another biome.
 
 Every manual or automatic join starts a **60-second auto-join cooldown**, preventing another signal from switching servers while Roblox is waiting at or loading past the Play screen. When Auto-Start has clicked Play and a later biome reading confirms the game view is ready, that cooldown ends early. The current-server card shows the remaining cooldown when presence is available.
 

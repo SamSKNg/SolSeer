@@ -44,6 +44,8 @@ test("biome OCR stays active with Auto-Start off and keeps the last reading", ()
   assert.equal(automation.snapshot().biome, "Glitched");
   assert.equal(automation.snapshot().biomeText, "[GL1TCHED]");
   assert.equal(automation.snapshot().biomeFresh, true);
+  assert.equal(automation.snapshot().scanAccepted, true);
+  assert.equal(automation.snapshot().scanBiome, "Glitched");
   child.stdout.write(
     `${JSON.stringify({ kind: "scan", biomeText: "PLAY", playFound: true, at: now })}\n`,
   );
@@ -61,6 +63,14 @@ test("biome OCR stays active with Auto-Start off and keeps the last reading", ()
     automation.snapshot().message,
     "Reading the maximized Roblox window.",
   );
+  assert.ok(automation.snapshot().scanConfidence < 0.7);
+  assert.equal(automation.snapshot().scanAccepted, false);
+  child.stdout.write(
+    `${JSON.stringify({ kind: "scan", biomeText: "", at: now + 500 })}\n`,
+  );
+  assert.equal(automation.snapshot().scanConfidence, null);
+  assert.equal(automation.snapshot().scanBiome, null);
+  assert.equal(automation.snapshot().biome, "Glitched");
   automation.stop();
   assert.equal(child.killed, true);
   assert.equal(automation.snapshot().biome, "Glitched");

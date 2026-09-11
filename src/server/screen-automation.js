@@ -30,7 +30,9 @@ const similarity = (left, right) =>
     ? 1 - distance(left, right) / Math.max(left.length, right.length)
     : 1;
 
-export function matchBiome(text) {
+const BIOME_MATCH_THRESHOLD = 0.7;
+
+export function biomeCandidate(text) {
   const lines = String(text ?? "")
     .split(/[\r\n]+/)
     .map(normalizeBiome)
@@ -55,7 +57,12 @@ export function matchBiome(text) {
       }
     }
   }
-  return best?.confidence >= 0.7 ? best : null;
+  return best;
+}
+
+export function matchBiome(text) {
+  const best = biomeCandidate(text);
+  return best?.confidence >= BIOME_MATCH_THRESHOLD ? best : null;
 }
 
 export class ScreenAutomation {
@@ -88,6 +95,10 @@ export class ScreenAutomation {
       playVisible: false,
       playAt: null,
       lastScanAt: null,
+      scanBiome: null,
+      scanConfidence: null,
+      scanAccepted: false,
+      matchThreshold: BIOME_MATCH_THRESHOLD,
       lastAutoStartAt: null,
     };
   }
@@ -181,7 +192,9 @@ export class ScreenAutomation {
           message: String(event.message ?? "Windows OCR status changed."),
         };
       } else if (event.kind === "scan") {
-        const matched = matchBiome(event.biomeText);
+        const candidate = biomeCandidate(event.biomeText);
+        const matched =
+          candidate?.confidence >= BIOME_MATCH_THRESHOLD ? candidate : null;
         this.state = {
           ...this.state,
           status: "scanning",
@@ -203,6 +216,9 @@ export class ScreenAutomation {
           playVisible: event.playFound === true,
           playAt: event.playFound ? at : this.state.playAt,
           lastScanAt: at,
+          scanBiome: candidate?.biome ?? null,
+          scanConfidence: candidate?.confidence ?? null,
+          scanAccepted: matched != null,
           lastAutoStartAt: event.clicked ? at : this.state.lastAutoStartAt,
         };
       }

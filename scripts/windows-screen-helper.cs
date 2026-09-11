@@ -12,6 +12,7 @@ using Windows.Foundation;
 using Windows.Media.Ocr;
 using Windows.Graphics.Imaging;
 using Windows.Storage.Streams;
+using Size = System.Drawing.Size;
 
 internal static class SolseerScreenHelper
 {
@@ -55,7 +56,6 @@ internal static class SolseerScreenHelper
     private const uint MouseMove = 0x0001;
     private const uint MouseLeftDown = 0x0002;
     private const uint MouseLeftUp = 0x0004;
-    private const uint PrintWindowRenderFullContent = 2;
     private static readonly JavaScriptSerializer Json = new JavaScriptSerializer();
     private static bool stopping;
     private static int playMatches;
@@ -63,18 +63,13 @@ internal static class SolseerScreenHelper
 
     [DllImport("user32.dll")] private static extern bool SetProcessDPIAware();
     [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
-    [DllImport("user32.dll")] private static extern bool EnumWindows(EnumWindowsCallback callback, IntPtr state);
-    [DllImport("user32.dll")] private static extern bool IsWindowVisible(IntPtr window);
     [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
     [DllImport("user32.dll")] private static extern bool GetWindowRect(IntPtr window, out Rect rect);
     [DllImport("user32.dll")] private static extern IntPtr MonitorFromWindow(IntPtr window, uint flags);
     [DllImport("user32.dll", CharSet = CharSet.Auto)] private static extern bool GetMonitorInfo(IntPtr monitor, ref MonitorInfo info);
     [DllImport("user32.dll")] private static extern bool SetCursorPos(int x, int y);
-    [DllImport("user32.dll")] private static extern bool PrintWindow(IntPtr window, IntPtr deviceContext, uint flags);
-    [DllImport("gdi32.dll")] private static extern bool SetViewportOrgEx(IntPtr deviceContext, int x, int y, IntPtr previousPoint);
     [DllImport("user32.dll", SetLastError = true)] private static extern uint SendInput(uint inputCount, Input[] inputs, int inputSize);
 
-    private delegate bool EnumWindowsCallback(IntPtr window, IntPtr state);
 
     [ComImport]
     [Guid("905a0fef-bc53-11df-8c49-001e4fc686da")]
@@ -97,6 +92,7 @@ internal static class SolseerScreenHelper
         public int Width;
         public int Height;
         public Rectangle OcrRegion;
+        public Size BiomeSize;
         public int PlayX;
         public int PlayY;
     }
@@ -133,6 +129,7 @@ internal static class SolseerScreenHelper
                 Width = 1920,
                 Height = 1080,
                 OcrRegion = new Rectangle(0, 780, 600, 290),
+                BiomeSize = new Size(460, 170),
                 PlayX = 264,
                 PlayY = 1000
             };
@@ -142,6 +139,7 @@ internal static class SolseerScreenHelper
             Width = 2560,
             Height = 1440,
             OcrRegion = new Rectangle(0, 1080, 760, 359),
+            BiomeSize = new Size(600, 220),
             PlayX = 342,
             PlayY = 1331
         };
@@ -160,9 +158,10 @@ internal static class SolseerScreenHelper
         {
             RobloxWindow window;
             string status;
-            if (!TryGetRobloxWindow(out window)) status = "roblox_not_found";
+            if (!TryGetRobloxWindow(out window)) status = "roblox_not_foreground";
             else if (!IsFullscreen(window, profile)) status = "maximize_resolution";
             else status = "scanning";
+            if (status != "scanning") playMatches = 0;
             if (status != previousStatus)
             {
                 Emit(Status(status, StatusMessage(status, profile)));
@@ -172,9 +171,12 @@ internal static class SolseerScreenHelper
             {
                 try
                 {
-                    string ocrText = await CaptureAndRead(engine, window, profile.OcrRegion);
+                    FrameReading reading = await CaptureAndRead(engine, window, profile);
+                    string ocrText = reading.BiomeText;
+                    // Discard a frame if focus changed while recognition was running.
+                    if (!IsForeground(window)) { playMatches = 0; await Task.Delay(500); continue; }
                     bool biomeFound = LooksLikeBiome(ocrText);
-                    bool playFound = LooksLikePlay(ocrText);
+                    bool playFound = LooksLikePlay(reading.OriginalText);
                     playMatches = autoStart && playFound ? playMatches + 1 : 0;
                     bool clicked = false;
                     bool clickAttempted = false;
@@ -196,6 +198,7 @@ internal static class SolseerScreenHelper
                     scan["kind"] = "scan";
                     scan["status"] = "scanning";
                     scan["biomeText"] = ocrText;
+                    scan["ocrChannel"] = reading.Channel;
                     scan["biomeFound"] = biomeFound;
                     scan["playFound"] = playFound;
                     scan["clickAttempted"] = clickAttempted;
@@ -226,7 +229,7 @@ internal static class SolseerScreenHelper
 
     private static string StatusMessage(string status, ScreenProfile profile)
     {
-        if (status == "roblox_not_found") return "Open Roblox to start biome OCR.";
+        if (status == "roblox_not_foreground") return "OCR paused; bring Roblox to the foreground.";
         if (status == "maximize_resolution") return "Maximize Roblox on a " + profile.Width + "×" + profile.Height + " display.";
         return "Reading the Roblox window.";
     }
@@ -240,39 +243,16 @@ internal static class SolseerScreenHelper
     private static bool TryGetRobloxWindow(out RobloxWindow result)
     {
         result = null;
-        List<IntPtr> handles = new List<IntPtr>();
-        EnumWindows(delegate(IntPtr candidate, IntPtr state)
-        {
-            if (!IsWindowVisible(candidate)) return true;
-            uint candidateProcessId;
-            GetWindowThreadProcessId(candidate, out candidateProcessId);
-            try
-            {
-                Process process = Process.GetProcessById((int)candidateProcessId);
-                if (process.ProcessName.IndexOf("RobloxPlayerBeta", StringComparison.OrdinalIgnoreCase) >= 0)
-                    handles.Add(candidate);
-            }
-            catch { }
-            return true;
-        }, IntPtr.Zero);
-        if (handles.Count == 0) return false;
-        IntPtr foreground = GetForegroundWindow();
-        IntPtr handle = handles.Contains(foreground) ? foreground : IntPtr.Zero;
-        if (handle == IntPtr.Zero)
-        {
-            long largestArea = 0;
-            foreach (IntPtr candidate in handles)
-            {
-                Rect candidateBounds;
-                if (!GetWindowRect(candidate, out candidateBounds)) continue;
-                long width = Math.Max(0, candidateBounds.Right - candidateBounds.Left);
-                long height = Math.Max(0, candidateBounds.Bottom - candidateBounds.Top);
-                if (width * height <= largestArea) continue;
-                largestArea = width * height;
-                handle = candidate;
-            }
-        }
+        IntPtr handle = GetForegroundWindow();
         if (handle == IntPtr.Zero) return false;
+        uint processId;
+        GetWindowThreadProcessId(handle, out processId);
+        try
+        {
+            using (Process process = Process.GetProcessById((int)processId))
+                if (!String.Equals(process.ProcessName, "RobloxPlayerBeta", StringComparison.OrdinalIgnoreCase)) return false;
+        }
+        catch { return false; }
         Rect bounds;
         if (!GetWindowRect(handle, out bounds)) return false;
         IntPtr monitorHandle = MonitorFromWindow(handle, MonitorDefaultToNearest);
@@ -299,25 +279,22 @@ internal static class SolseerScreenHelper
             Math.Abs(window.Bounds.Bottom - window.Monitor.Bottom) <= 4;
     }
 
-    private static async Task<string> CaptureAndRead(OcrEngine engine, RobloxWindow window, Rectangle relative)
+    private sealed class FrameReading
     {
+        public string OriginalText;
+        public string BiomeText;
+        public string Channel = "original";
+    }
+
+    private static async Task<FrameReading> CaptureAndRead(OcrEngine engine, RobloxWindow window, ScreenProfile profile)
+    {
+        Rectangle relative = profile.OcrRegion;
         using (Bitmap bitmap = new Bitmap(relative.Width, relative.Height, PixelFormat.Format32bppArgb))
         {
             using (Graphics graphics = Graphics.FromImage(bitmap))
             {
-                if (IsForeground(window))
-                    graphics.CopyFromScreen(window.Monitor.Left + relative.X, window.Monitor.Top + relative.Y, 0, 0, relative.Size, CopyPixelOperation.SourceCopy);
-                else
-                {
-                    IntPtr deviceContext = graphics.GetHdc();
-                    try
-                    {
-                        SetViewportOrgEx(deviceContext, -relative.X, -relative.Y, IntPtr.Zero);
-                        if (!PrintWindow(window.Handle, deviceContext, PrintWindowRenderFullContent))
-                            throw new InvalidOperationException("The Roblox window could not be captured.");
-                    }
-                    finally { graphics.ReleaseHdc(deviceContext); }
-                }
+                if (!IsForeground(window)) throw new InvalidOperationException("Roblox is no longer foreground.");
+                graphics.CopyFromScreen(window.Monitor.Left + relative.X, window.Monitor.Top + relative.Y, 0, 0, relative.Size, CopyPixelOperation.SourceCopy);
             }
 
             Rectangle bounds = new Rectangle(0, 0, bitmap.Width, bitmap.Height);
@@ -329,18 +306,90 @@ internal static class SolseerScreenHelper
                     Marshal.Copy(IntPtr.Add(data.Scan0, row * data.Stride), pixels, row * bitmap.Width * 4, bitmap.Width * 4);
             }
             finally { bitmap.UnlockBits(data); }
+
+            string original = await ReadPixels(engine, pixels, bitmap.Width, bitmap.Height);
+            FrameReading reading = new FrameReading { OriginalText = original, BiomeText = original };
+            // Retry only uncertain in-game reads, using the same captured frame.
+            // Play is always classified from the original full-color pass.
+            if (!LooksLikeBiome(original) && !LooksLikePlay(original) && IsForeground(window))
+            {
+                int channel;
+                byte[] enhanced = SelectColorChannel(pixels, bitmap.Width, profile.BiomeSize, out channel);
+                if (enhanced != null)
+                {
+                    string retry = await ReadPixels(engine, enhanced, profile.BiomeSize.Width, profile.BiomeSize.Height);
+                    if (LooksLikeBiome(retry))
+                    {
+                        reading.BiomeText = retry;
+                        reading.Channel = new string[] { "blue", "green", "red" }[channel];
+                    }
+                }
+            }
+            return reading;
+        }
+    }
+
+    // Score local edges rather than global brightness, which favors scenery.
+    // BGRA channel selection is cheap; only the winning channel gets OCR.
+    private static byte[] SelectColorChannel(byte[] source, int sourceWidth, Size size, out int selected)
+    {
+        selected = 0;
+        double best = 0;
+        int low = 0, high = 255;
+        for (int channel = 0; channel < 3; channel++)
+        {
+            int[] histogram = new int[256];
+            double score = 0;
+            for (int y = 0; y < size.Height; y++)
+                for (int x = 0; x < size.Width; x++)
+                {
+                    int index = (y * sourceWidth + x) * 4 + channel;
+                    int value = source[index];
+                    histogram[value]++;
+                    if (x > 0) score += Math.Abs(value - source[index - 4]);
+                    if (y > 0) score += Math.Abs(value - source[index - sourceWidth * 4]);
+                }
+            int count = size.Width * size.Height;
+            int cumulative = 0, lower = -1, upper = 255;
+            for (int value = 0; value < 256; value++)
+            {
+                cumulative += histogram[value];
+                if (lower < 0 && cumulative >= Math.Max(1, count / 100)) lower = value;
+                if (cumulative >= count - count / 100) { upper = value; break; }
+            }
+            if (upper - lower < 8 || score <= best) continue;
+            selected = channel;
+            best = score;
+            low = lower;
+            high = upper;
+        }
+        if (best == 0) return null;
+        byte[] output = new byte[size.Width * size.Height * 4];
+        for (int y = 0; y < size.Height; y++)
+            for (int x = 0; x < size.Width; x++)
+            {
+                int value = source[(y * sourceWidth + x) * 4 + selected];
+                byte gray = (byte)Math.Max(0, Math.Min(255, (value - low) * 255 / (high - low)));
+                int index = (y * size.Width + x) * 4;
+                output[index] = output[index + 1] = output[index + 2] = gray;
+                output[index + 3] = 255;
+            }
+        return output;
+    }
+
+    private static async Task<string> ReadPixels(OcrEngine engine, byte[] pixels, int width, int height)
+    {
             Windows.Storage.Streams.Buffer buffer = new Windows.Storage.Streams.Buffer((uint)pixels.Length);
             IntPtr destination;
             ((IBufferByteAccess)(object)buffer).Buffer(out destination);
             Marshal.Copy(pixels, 0, destination, pixels.Length);
             buffer.Length = (uint)pixels.Length;
             using (SoftwareBitmap softwareBitmap = SoftwareBitmap.CreateCopyFromBuffer(
-                buffer, BitmapPixelFormat.Bgra8, bitmap.Width, bitmap.Height, BitmapAlphaMode.Premultiplied))
+                buffer, BitmapPixelFormat.Bgra8, width, height, BitmapAlphaMode.Premultiplied))
             {
                 OcrResult result = await Await(engine.RecognizeAsync(softwareBitmap));
                 return result.Text ?? "";
             }
-        }
     }
 
     private static Task<T> Await<T>(IAsyncOperation<T> operation)

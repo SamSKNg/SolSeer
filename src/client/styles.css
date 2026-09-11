@@ -365,6 +365,56 @@ h1 {
     inset 10px 0 24px color-mix(in srgb, var(--biome-color) 9%, transparent),
     -5px 0 18px color-mix(in srgb, var(--biome-color) 20%, transparent);
 }
+.current-server-card > :not(.current-server-aura) {
+  position: relative;
+  z-index: 1;
+}
+.current-server-aura {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.current-server-aura i {
+  position: absolute;
+  top: var(--particle-y);
+  left: -8px;
+  width: calc(100% + 16px);
+  height: var(--particle-size);
+  opacity: 0;
+}
+.current-server-aura i::before {
+  content: "";
+  display: block;
+  width: var(--particle-size);
+  height: var(--particle-size);
+  background: var(--biome-color);
+  box-shadow:
+    -7px 0 color-mix(in srgb, var(--biome-color) 25%, transparent),
+    0 0 6px color-mix(in srgb, var(--biome-color) 45%, transparent);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .shell:not(.motion-paused) .current-server-aura i {
+    animation: server-pixel-flow var(--particle-duration) var(--particle-delay)
+      linear infinite;
+  }
+}
+@keyframes server-pixel-flow {
+  0% {
+    transform: translateX(0);
+    opacity: 0;
+  }
+  12% {
+    opacity: 0.55;
+  }
+  75% {
+    opacity: 0.25;
+  }
+  100% {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+}
 .current-server-card-icon {
   display: grid;
   place-items: center;
