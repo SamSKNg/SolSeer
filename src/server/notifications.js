@@ -16,6 +16,7 @@ function validate(value) {
     "autoJoin",
     "autoJoinPotential",
     "autoJoinCluster",
+    "autoJoinRecentFull",
     "autoStart",
   ];
   if (
@@ -183,15 +184,25 @@ export class Notifications {
             this.#pending.push(eventFor(row, snapshot));
           }
         }
+        // This opt-in also considers already-visible retained full bursts,
+        // but never an episode we have already attempted or stale samples.
+        const recentFull =
+          this.#preferences.autoJoinRecentFull &&
+          row.signalState === "full" &&
+          row.notificationEligible === false &&
+          !row.awaitingFreshSample &&
+          row.capacity > 0 &&
+          row.players >= row.capacity;
         const autoJoinTypeEnabled =
-          row.alert === "cluster"
+          recentFull ||
+          (row.alert === "cluster"
             ? this.#preferences.autoJoinCluster
-            : this.#preferences.autoJoinPotential;
+            : this.#preferences.autoJoinPotential);
         const autoJoinEligible =
           this.#preferences.autoJoin &&
           autoJoinTypeEnabled &&
           row.id !== snapshot.currentServerId &&
-          isActionable(row) &&
+          (isActionable(row) || recentFull) &&
           !episode.autoJoined;
         if (autoJoinEligible && targetBiome && actionableUpgrade)
           episode.blockedByTargetBiome = true;
@@ -199,7 +210,7 @@ export class Notifications {
           autoJoinEligible &&
           !targetBiome &&
           !autoJoinCoolingDown &&
-          (actionableUpgrade || episode.blockedByTargetBiome)
+          (actionableUpgrade || episode.blockedByTargetBiome || recentFull)
         )
           autoJoinCandidates.push({ row, episode });
         this.#episodes.set(row.id, {

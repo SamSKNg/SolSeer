@@ -190,10 +190,11 @@ internal static class SolseerScreenHelper
 
     private static async Task Run(ScreenProfile profile, bool autoStart)
     {
-        OcrEngine engine = OcrEngine.TryCreateFromUserProfileLanguages();
-        if (engine == null)
+        // Windows OCR is retained only for offline benchmark methods below.
+        // All live recognition, including Play, uses the same Tesseract worker.
+        if (biomeWorker == null)
         {
-            Emit(Status("ocr_unavailable", "Install a Windows OCR language pack."));
+            Emit(Status("ocr_unavailable", "Start SolSeer to initialize Tesseract OCR."));
             return;
         }
         string previousStatus = null;
@@ -214,12 +215,12 @@ internal static class SolseerScreenHelper
             {
                 try
                 {
-                    FrameReading reading = await CaptureAndRead(engine, window, profile);
+                    FrameReading reading = await CaptureAndRead(window, profile);
                     string ocrText = reading.BiomeText;
                     // Discard a frame if focus changed while recognition was running.
                     if (!IsForeground(window)) { playMatches = 0; zoomNotches = 0; await Task.Delay(500); continue; }
                     bool biomeFound = LooksLikeBiome(ocrText);
-                    bool playFound = LooksLikePlay(reading.OriginalText);
+                    bool playFound = reading.PlayFound;
                     StepZoomOut(window, profile, playFound);
                     playMatches = autoStart && playFound ? playMatches + 1 : 0;
                     bool clicked = false;
@@ -329,12 +330,13 @@ internal static class SolseerScreenHelper
 
     private sealed class FrameReading
     {
+        public bool PlayFound;
         public string OriginalText;
         public string BiomeText;
         public string Channel = "original";
     }
 
-    private static async Task<FrameReading> CaptureAndRead(OcrEngine engine, RobloxWindow window, ScreenProfile profile)
+    private static async Task<FrameReading> CaptureAndRead(RobloxWindow window, ScreenProfile profile)
     {
         Rectangle relative = profile.OcrRegion;
         using (Bitmap bitmap = new Bitmap(relative.Width, relative.Height, PixelFormat.Format32bppArgb))
@@ -355,65 +357,40 @@ internal static class SolseerScreenHelper
             }
             finally { bitmap.UnlockBits(data); }
 
-            OcrResult originalResult = await ReadPixelResult(engine, pixels, bitmap.Width, bitmap.Height);
-            string original = originalResult.Text ?? "";
             if (biomeWorker != null)
             {
-                FrameReading tesseract = new FrameReading { OriginalText = original, BiomeText = "" };
-                if (!LooksLikePlay(original) && IsForeground(window))
+                FrameReading tesseract = new FrameReading { OriginalText = "", BiomeText = "" };
+                if (IsForeground(window))
                 {
-                    Rectangle crop = profile.BiomeRegion;
-                    byte[] cropped = new byte[crop.Width * crop.Height * 4];
-                    for (int y = 0; y < crop.Height; y++)
-                        System.Buffer.BlockCopy(pixels, ((crop.Y + y) * bitmap.Width + crop.X) * 4, cropped, y * crop.Width * 4, crop.Width * 4);
-                    biomeWorker.StandardInput.WriteLine(Json.Serialize(new {width=crop.Width,height=crop.Height,pixels=Convert.ToBase64String(cropped)}));
+                    int playWidth = profile.Width == 2560 ? 260 : 200;
+                    int playHeight = profile.Height == 1440 ? 90 : 70;
+                    Rectangle playCrop = new Rectangle(profile.PlayX - playWidth / 2,
+                        profile.PlayY - playHeight / 2 - profile.OcrRegion.Y, playWidth, playHeight);
+                    biomeWorker.StandardInput.WriteLine(Json.Serialize(new {
+                        biome=CropPayload(pixels, bitmap.Width, profile.BiomeRegion),
+                        play=CropPayload(pixels, bitmap.Width, playCrop)
+                    }));
                     biomeWorker.StandardInput.Flush();
                     var result = Json.Deserialize<Dictionary<string, object>>(await ReadWorkerLine(8000));
                     if (result.ContainsKey("error")) throw new InvalidOperationException("Tesseract scan failed.");
                     tesseract.BiomeText = (string)result["text"];
                     tesseract.Channel = (string)result["channel"];
+                    tesseract.OriginalText = (string)result["playText"];
+                    tesseract.PlayFound = (bool)result["playFound"];
                 }
                 return tesseract;
             }
-            StringBuilder biomeText = new StringBuilder();
-            foreach (OcrLine line in originalResult.Lines)
-                foreach (OcrWord word in line.Words)
-                {
-                    Windows.Foundation.Rect box = word.BoundingRect;
-                    if (profile.BiomeRegion.Contains((int)(box.X + box.Width / 2), (int)(box.Y + box.Height / 2)))
-                        biomeText.Append(word.Text).Append(' ');
-                }
-            FrameReading reading = new FrameReading { OriginalText = original, BiomeText = biomeText.ToString().Trim() };
-            // Retry only uncertain in-game reads, using the same captured frame.
-            // Play is always classified from the original full-color pass.
-            if (!LooksLikeBiome(reading.BiomeText) && !LooksLikePlay(original) && IsForeground(window))
-            {
-                Rectangle crop = profile.BiomeRegion;
-                byte[] cropped = new byte[crop.Width * crop.Height * 4];
-                for (int y = 0; y < crop.Height; y++)
-                    System.Buffer.BlockCopy(pixels, ((crop.Y + y) * bitmap.Width + crop.X) * 4,
-                        cropped, y * crop.Width * 4, crop.Width * 4);
-                // Try red, green, then blue from the same frame. Do not let
-                // scenery edge strength exclude a potentially readable channel.
-                foreach (int channel in new int[] { 2, 1, 0 })
-                {
-                    if (stopping || !IsForeground(window)) break;
-                    byte[] enhanced = ExtractColorChannel(cropped, crop.Width, crop.Size, channel);
-                    string retry = (await ReadPixelResult(engine, enhanced, crop.Width, crop.Height)).Text ?? "";
-                    double score = BiomeScore(retry);
-                    if (score >= 0.70)
-                    {
-                        reading.BiomeText = retry;
-                        reading.Channel = new string[] { "blue", "green", "red" }[channel];
-                        break;
-                    }
-                }
-            }
-            // Unsuccessful frames are retried on the next polling cycle;
-            // never publish a below-threshold candidate as the live result.
-            if (!LooksLikeBiome(reading.BiomeText)) reading.BiomeText = "";
-            return reading;
+            throw new InvalidOperationException("Tesseract is unavailable.");
         }
+    }
+
+    private static object CropPayload(byte[] pixels, int sourceWidth, Rectangle crop)
+    {
+        byte[] cropped = new byte[crop.Width * crop.Height * 4];
+        for (int y = 0; y < crop.Height; y++)
+            System.Buffer.BlockCopy(pixels, ((crop.Y + y) * sourceWidth + crop.X) * 4,
+                cropped, y * crop.Width * 4, crop.Width * 4);
+        return new {width=crop.Width,height=crop.Height,pixels=Convert.ToBase64String(cropped)};
     }
 
     // Each channel gets its own percentile contrast stretch, including faint

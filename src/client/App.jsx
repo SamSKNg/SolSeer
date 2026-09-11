@@ -597,7 +597,11 @@ export function App() {
                 </div>
                 <div className="signal-heading-actions">
                   {data.automation && (
-                    <p className="ocr-status ocr-status-inline" role="status">
+                    <p
+                      className="ocr-status ocr-status-inline"
+                      role="status"
+                      title={data.automation.message}
+                    >
                       <ScanLine size={14} aria-hidden="true" />
                       {data.automation.status !== "scanning"
                         ? data.automation.message

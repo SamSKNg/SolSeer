@@ -111,3 +111,44 @@ export async function createBiomeWorker() {
   await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_LINE });
   return worker;
 }
+
+export function matchesPlay(text) {
+  return String(text ?? "")
+    .split(/\s+/)
+    .some((word) => {
+      const candidate = word.replace(/[^a-z]/gi, "").toUpperCase();
+      // One edit in a four-letter label is 75%; two edits cannot reach 70%.
+      if (candidate === "PLAY") return true;
+      if (candidate.length === 4)
+        return [...candidate].filter((c, i) => c !== "PLAY"[i]).length <= 1;
+      if (candidate.length === 3)
+        return [..."PLAY"].some(
+          (_, i) => "PLAY".slice(0, i) + "PLAY".slice(i + 1) === candidate,
+        );
+      if (candidate.length === 5)
+        return [...candidate].some(
+          (_, i) => candidate.slice(0, i) + candidate.slice(i + 1) === "PLAY",
+        );
+      return false;
+    });
+}
+
+export async function recognizeFrame(worker, frame) {
+  const play = frame.play;
+  const playPixels = Buffer.from(play.pixels, "base64");
+  const { data } = await worker.recognize(
+    cropBmp(playPixels, play.width, play.height),
+  );
+  const playFound = matchesPlay(data.text);
+  // Play is a marker, not a biome. Avoid classifying menu scenery as a biome.
+  if (playFound)
+    return { text: "", channel: "none", playText: data.text, playFound };
+  const biome = frame.biome;
+  const result = await recognizeBiome(
+    worker,
+    Buffer.from(biome.pixels, "base64"),
+    biome.width,
+    biome.height,
+  );
+  return { ...result, playText: data.text, playFound };
+}

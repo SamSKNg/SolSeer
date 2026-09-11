@@ -130,7 +130,7 @@ await writeFile(
   startHere
     .replace(
       "Biome OCR runs whenever solseer is open and requires foreground, maximized Roblox at the 1920x1080 or 2560x1440 resolution selected in Settings. Auto-Start is optional and off by default; it adds zooming with O after repeated unclear in-game reads and clicks Play through Windows SendInput after two fuzzy matches.",
-      "A shared capture feeds Tesseract for biome text and Windows OCR for Play while Roblox is foreground and maximized at the 1920x1080 or 2560x1440 resolution selected in Settings. English OCR data is bundled; no model download is needed at runtime. Scanning pauses when you switch apps. Auto-Start optionally clicks Play and sends 10 zoom-out wheel steps after the menu disappears; switching apps cancels the burst.",
+      "A shared capture feeds one persistent Tesseract worker for both biome text and Play while Roblox is foreground and maximized at the 1920x1080 or 2560x1440 resolution selected in Settings. English OCR data is bundled; no model download is needed at runtime. Scanning pauses when you switch apps. Auto-Start optionally clicks Play and sends 10 zoom-out wheel steps after the menu disappears; switching apps cancels the burst.",
     )
     .replace("biome feedback", "biome observations")
     .replace("Server observations and joins last only for the running session.", "Live server observations last for the running session. Join history persists beside local settings and can be exported as JSON from Join history."),

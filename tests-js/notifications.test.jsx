@@ -26,6 +26,7 @@ const preferences = {
   autoJoin: false,
   autoJoinPotential: true,
   autoJoinCluster: true,
+  autoJoinRecentFull: false,
   autoStart: false,
   ocrResolution: "1440p",
   biomeTargets: [],
@@ -95,6 +96,12 @@ test("settings save independent auto-join choices for early and rapid signals", 
     <NotificationSettings ready initial={preferences} token="safe-token" />,
   );
   fireEvent.click(screen.getByLabelText("Auto-join early leads"));
+  expect(
+    screen.getByLabelText("Auto-join recent bursts in full servers").checked,
+  ).toBe(false);
+  fireEvent.click(
+    screen.getByLabelText("Auto-join recent bursts in full servers"),
+  );
   fireEvent.click(
     screen.getByRole("button", { name: "Save signal preferences" }),
   );
@@ -103,6 +110,7 @@ test("settings save independent auto-join choices for early and rapid signals", 
     ...preferences,
     autoJoinPotential: false,
     autoJoinCluster: true,
+    autoJoinRecentFull: true,
   });
 });
 

@@ -187,6 +187,7 @@ test(
         autoJoin: false,
         autoJoinPotential: true,
         autoJoinCluster: false,
+        autoJoinRecentFull: false,
         autoStart: false,
         ocrResolution: "1440p",
         biomeTargets: [],

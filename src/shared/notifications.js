@@ -5,6 +5,7 @@ export const DEFAULT_NOTIFICATIONS = Object.freeze({
   autoJoin: false,
   autoJoinPotential: true,
   autoJoinCluster: true,
+  autoJoinRecentFull: false,
   autoStart: false,
   ocrResolution: "1440p",
   biomeTargets: Object.freeze([]),

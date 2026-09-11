@@ -14,6 +14,7 @@ const enabled = {
   autoJoin: false,
   autoJoinPotential: true,
   autoJoinCluster: true,
+  autoJoinRecentFull: false,
   autoStart: false,
   ocrResolution: "1440p",
   biomeTargets: [],
@@ -100,6 +101,7 @@ test("notification preferences persist independently, validate input and default
       autoJoin: false,
       autoJoinPotential: true,
       autoJoinCluster: true,
+      autoJoinRecentFull: false,
       autoStart: false,
       ocrResolution: "1440p",
       biomeTargets: [],
@@ -108,6 +110,7 @@ test("notification preferences persist independently, validate input and default
       null,
       {},
       { ...enabled, enabled: "true" },
+      { ...enabled, autoJoinRecentFull: "true" },
       { ...enabled, ocrResolution: "720p" },
       { ...enabled, biomeTargets: ["Not a biome"] },
       { ...enabled, biomeTargets: ["Aurora", "aurora"] },
@@ -241,6 +244,85 @@ test("a newly full rapid signal notifies and remains eligible for the Roblox que
       joined.map((event) => event.id),
       ["full-rapid"],
     );
+  }));
+
+test("recent full bursts are opt-in, work for both tiers, persist, and attempt each episode once", () =>
+  fixture(async (_unused, folder) => {
+    for (const tier of ["potential", "cluster"]) {
+      const joined = [];
+      const notifications = new Notifications(folder, {
+        onAutoJoin: (event) => {
+          joined.push(event.id);
+          return true;
+        },
+      });
+      await notifications.save({
+        ...enabled,
+        autoJoin: true,
+        autoJoinPotential: false,
+        autoJoinCluster: false,
+      });
+      const full = {
+        ...row(tier, tier),
+        players: 20,
+        signalState: "full",
+        notificationEligible: false,
+      };
+      notifications.update(sample(1, [full]));
+      assert.deepEqual(joined, []);
+      await notifications.save({
+        ...notifications.preferences,
+        autoJoinRecentFull: true,
+      });
+      assert.equal(
+        new Notifications(folder).preferences.autoJoinRecentFull,
+        true,
+      );
+      notifications.update(sample(2, [full]));
+      assert.deepEqual(joined, [tier]);
+      assert.deepEqual(notifications.claim(), []);
+      notifications.update(sample(3, [full], 100000));
+      assert.deepEqual(joined, [tier]);
+    }
+  }));
+
+test("recent full auto-join respects stale/current/biome/cooldown guards and keeps pending bursts eligible", () =>
+  fixture(async (_unused, folder) => {
+    const joined = [];
+    const notifications = new Notifications(folder, {
+      onAutoJoin: (event) => {
+        joined.push(event.id);
+        return true;
+      },
+    });
+    await notifications.save({
+      ...enabled,
+      autoJoin: true,
+      autoJoinRecentFull: true,
+      biomeTargets: ["Singularity"],
+    });
+    const full = {
+      ...row("potential", "recent"),
+      players: 20,
+      signalState: "full",
+      notificationEligible: false,
+    };
+    notifications.update(sample(1, [{ ...full, isFresh: false }]));
+    notifications.update({ ...sample(2, [full]), currentServerId: "recent" });
+    notifications.update({
+      ...sample(3, [full]),
+      automation: { status: "scanning", biome: "Singularity" },
+    });
+    assert.deepEqual(joined, []);
+    notifications.startJoinCooldown("other", 15000);
+    notifications.update(sample(4, [full], 20000));
+    assert.deepEqual(joined, []);
+    notifications.update(
+      sample(5, [{ ...full, players: 19, signalState: "holding" }], 80000),
+    );
+    assert.deepEqual(joined, []);
+    notifications.update(sample(6, [full], 85000));
+    assert.deepEqual(joined, ["recent"]);
   }));
 
 test("end-to-end first growth observation notifies immediately, follow-up does not repeat, upgrade notifies once", () =>

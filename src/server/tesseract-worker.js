@@ -1,5 +1,9 @@
 import { createInterface } from "node:readline";
-import { createBiomeWorker, recognizeBiome } from "./tesseract-biome.js";
+import {
+  createBiomeWorker,
+  recognizeBiome,
+  recognizeFrame,
+} from "./tesseract-biome.js";
 
 // Private pipe protocol: one request at a time; no HTTP or screenshot files.
 const input = createInterface({ input: process.stdin, crlfDelay: Infinity });
@@ -16,12 +20,14 @@ try {
     try {
       if (line.length > 1500000) throw new Error("Oversized OCR request");
       const request = JSON.parse(line);
-      const result = await recognizeBiome(
-        worker,
-        Buffer.from(request.pixels, "base64"),
-        request.width,
-        request.height,
-      );
+      const result = request.play
+        ? await recognizeFrame(worker, request)
+        : await recognizeBiome(
+            worker,
+            Buffer.from(request.pixels, "base64"),
+            request.width,
+            request.height,
+          );
       emit(result);
     } catch {
       emit({ error: "Tesseract could not read this crop." });

@@ -215,15 +215,34 @@ export function NotificationSettings({ initial, token, ready }) {
           />
           Auto-join rapid filling (includes full queues)
         </label>
+        <label className="settings-consent">
+          <input
+            type="checkbox"
+            checked={preferences.autoJoinRecentFull ?? false}
+            disabled={!ready || busy}
+            onChange={(event) =>
+              setPreferences({
+                ...preferences,
+                autoJoinRecentFull: event.target.checked,
+              })
+            }
+          />
+          Auto-join recent bursts in full servers
+        </label>
+        <p className="subtle">
+          Also consider full servers retaining an earlier burst, even without
+          new growth. Includes recent early and rapid bursts already on the
+          list; attempts each episode once. Biome pauses and join cooldowns
+          still apply.
+        </p>
         <div className="settings-divider" aria-hidden="true" />
         <h3>Fullscreen OCR and biome targets</h3>
         <p className="subtle">
           Biome OCR reads a fixed region of the foreground, maximized Roblox
-          window and pauses when you switch apps. A shared capture feeds
-          Tesseract for biome text and Windows OCR for the Play marker.
-          Auto-Start only clicks Play when Roblox itself is foreground. A
-          selected target pauses automatic joins until OCR recognizes a
-          different biome.
+          window and pauses when you switch apps. A shared capture and one
+          Tesseract worker read both biome text and the Play marker. Auto-Start
+          only clicks Play when Roblox itself is foreground. A selected target
+          pauses automatic joins until OCR recognizes a different biome.
         </p>
         <div
           className="resolution-options"

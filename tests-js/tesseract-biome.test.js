@@ -1,6 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { cropBmp, recognizeBiome } from "../src/server/tesseract-biome.js";
+import {
+  cropBmp,
+  recognizeBiome,
+  recognizeFrame,
+  matchesPlay,
+} from "../src/server/tesseract-biome.js";
 
 test("BMP encoding preserves BGR pixels, row order, and padding", () => {
   const bmp = cropBmp(Buffer.from([10, 20, 30, 255, 40, 50, 60, 255]), 1, 2);
@@ -8,6 +13,41 @@ test("BMP encoding preserves BGR pixels, row order, and padding", () => {
   assert.equal(bmp.length, 62);
   assert.deepEqual([...bmp.subarray(54, 62)], [40, 50, 60, 0, 10, 20, 30, 0]);
   assert.throws(() => cropBmp(Buffer.alloc(0), 425, 32));
+});
+
+test("Play matching accepts Ploy but not player labels", () => {
+  for (const text of ["Play", "[PLAY]", "Ploy", "Plav", "PL AY"]) {
+    assert.equal(matchesPlay(text), text !== "PL AY");
+  }
+  for (const text of ["Player", "Players", "Display", "", "Changelogs"])
+    assert.equal(matchesPlay(text), false);
+});
+
+test("one worker recognizes Play and biome crops without concurrent OCR", async () => {
+  const crop = {
+    width: 1,
+    height: 1,
+    pixels: Buffer.alloc(4, 255).toString("base64"),
+  };
+  const frame = { play: crop, biome: crop };
+  let calls = 0;
+  const worker = {
+    recognize: async () => ({
+      data: { text: ++calls === 1 ? "PLAY" : "HEAVEN", confidence: 90 },
+    }),
+  };
+  const menu = await recognizeFrame(worker, frame);
+  assert.equal(menu.playFound, true);
+  assert.equal(menu.text, "");
+  assert.equal(calls, 1);
+  calls = 0;
+  worker.recognize = async () => ({
+    data: { text: ++calls === 1 ? "" : "HEAVEN", confidence: 90 },
+  });
+  const game = await recognizeFrame(worker, frame);
+  assert.equal(game.playFound, false);
+  assert.equal(game.text, "HEAVEN");
+  assert.equal(calls, 2);
 });
 
 test("faint and flat channels remain safe", () => {
