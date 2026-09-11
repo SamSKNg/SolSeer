@@ -605,8 +605,8 @@ export function App() {
                       {data.automation.lastScanAt != null && (
                         <span title="Text similarity to the closest known biome, not an OCR accuracy probability.">
                           {" · "}
-                          {data.automation.scanConfidence == null
-                            ? "no readable text"
+                          {!data.automation.scanAccepted
+                            ? "no match"
                             : `${Math.round(data.automation.scanConfidence * 100)}% match (${data.automation.scanBiome})`}
                         </span>
                       )}

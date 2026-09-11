@@ -198,7 +198,7 @@ internal static class SolseerScreenHelper
                                 lastClick = DateTime.UtcNow;
                                 playMatches = 0;
                                 zoomWindow = current.Handle;
-                                zoomNotches = 80;
+                                zoomNotches = 10;
                                 zoomDeadline = DateTime.UtcNow.AddSeconds(20);
                             }
                         }
@@ -331,48 +331,45 @@ internal static class SolseerScreenHelper
             // Play is always classified from the original full-color pass.
             if (!LooksLikeBiome(reading.BiomeText) && !LooksLikePlay(original) && IsForeground(window))
             {
-                int channel;
                 Rectangle crop = profile.BiomeRegion;
                 byte[] cropped = new byte[crop.Width * crop.Height * 4];
                 for (int y = 0; y < crop.Height; y++)
                     System.Buffer.BlockCopy(pixels, ((crop.Y + y) * bitmap.Width + crop.X) * 4,
                         cropped, y * crop.Width * 4, crop.Width * 4);
-                byte[] enhanced = SelectColorChannel(cropped, crop.Width, crop.Size, out channel);
-                if (enhanced != null)
+                // Try red, green, then blue from the same frame. Do not let
+                // scenery edge strength exclude a potentially readable channel.
+                foreach (int channel in new int[] { 2, 1, 0 })
                 {
+                    if (stopping || !IsForeground(window)) break;
+                    byte[] enhanced = ExtractColorChannel(cropped, crop.Width, crop.Size, channel);
                     string retry = (await ReadPixelResult(engine, enhanced, crop.Width, crop.Height)).Text ?? "";
-                    // Preserve uncertain retry text for live candidate/confidence
-                    // reporting. Acceptance still happens in the biome matcher.
-                    if (!String.IsNullOrWhiteSpace(retry))
+                    double score = BiomeScore(retry);
+                    if (score >= 0.70)
                     {
                         reading.BiomeText = retry;
                         reading.Channel = new string[] { "blue", "green", "red" }[channel];
+                        break;
                     }
                 }
             }
+            // Unsuccessful frames are retried on the next polling cycle;
+            // never publish a below-threshold candidate as the live result.
+            if (!LooksLikeBiome(reading.BiomeText)) reading.BiomeText = "";
             return reading;
         }
     }
 
-    // Score local edges rather than global brightness, which favors scenery.
-    // BGRA channel selection is cheap; only the winning channel gets OCR.
-    private static byte[] SelectColorChannel(byte[] source, int sourceWidth, Size size, out int selected)
+    // Each channel gets its own percentile contrast stretch, including faint
+    // channels previously excluded by the minimum-range/edge-score filter.
+    private static byte[] ExtractColorChannel(byte[] source, int sourceWidth, Size size, int channel)
     {
-        selected = 0;
-        double best = 0;
-        int low = 0, high = 255;
-        for (int channel = 0; channel < 3; channel++)
-        {
             int[] histogram = new int[256];
-            double score = 0;
             for (int y = 0; y < size.Height; y++)
                 for (int x = 0; x < size.Width; x++)
                 {
                     int index = (y * sourceWidth + x) * 4 + channel;
                     int value = source[index];
                     histogram[value]++;
-                    if (x > 0) score += Math.Abs(value - source[index - 4]);
-                    if (y > 0) score += Math.Abs(value - source[index - sourceWidth * 4]);
                 }
             int count = size.Width * size.Height;
             int cumulative = 0, lower = -1, upper = 255;
@@ -382,19 +379,20 @@ internal static class SolseerScreenHelper
                 if (lower < 0 && cumulative >= Math.Max(1, count / 100)) lower = value;
                 if (cumulative >= count - count / 100) { upper = value; break; }
             }
-            if (upper - lower < 8 || score <= best) continue;
-            selected = channel;
-            best = score;
-            low = lower;
-            high = upper;
+        int low = lower, high = upper;
+        // If percentile clipping removed sparse lettering, use the full range.
+        if (high <= low)
+        {
+            low = 0; high = 255;
+            while (low < 255 && histogram[low] == 0) low++;
+            while (high > low && histogram[high] == 0) high--;
         }
-        if (best == 0) return null;
         byte[] output = new byte[size.Width * size.Height * 4];
         for (int y = 0; y < size.Height; y++)
             for (int x = 0; x < size.Width; x++)
             {
-                int value = source[(y * sourceWidth + x) * 4 + selected];
-                byte gray = (byte)Math.Max(0, Math.Min(255, (value - low) * 255 / (high - low)));
+                int value = source[(y * sourceWidth + x) * 4 + channel];
+                byte gray = high > low ? (byte)Math.Max(0, Math.Min(255, (value - low) * 255 / (high - low))) : (byte)255;
                 int index = (y * size.Width + x) * 4;
                 output[index] = output[index + 1] = output[index + 2] = gray;
                 output[index + 3] = 255;
@@ -456,6 +454,13 @@ internal static class SolseerScreenHelper
 
     private static bool LooksLikeBiome(string text)
     {
+        return BiomeScore(text) >= 0.70;
+    }
+
+    // Mirror the backend's line-based text-similarity rules so early exit
+    // cannot accept a word that the backend would subsequently reject.
+    private static double BiomeScore(string text)
+    {
         string[] biomes = new string[]
         {
             "NORMAL", "WINDY", "SNOWY", "RAINY", "SANDSTORM", "HELL",
@@ -464,18 +469,22 @@ internal static class SolseerScreenHelper
             "GRAVEYARD", "BLAZINGSUN", "BLOODRAIN", "AURORA", "EGGLAND",
             "INCINERATOR"
         };
-        string normalized = Normalize(text);
-        foreach (string biome in biomes)
-            if (normalized.Contains(biome)) return true;
-        string[] words = (text ?? "").Split(new char[] { ' ', '\r', '\n', '\t', '[', ']', ':', '.', ',' }, StringSplitOptions.RemoveEmptyEntries);
-        foreach (string word in words)
+        double best = -1;
+        foreach (string line in (text ?? "").Split(new char[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries))
         {
-            string candidate = Normalize(word);
-            if (candidate.Length < 3) continue;
+            StringBuilder normalized = new StringBuilder();
+            foreach (char c in line.Normalize(NormalizationForm.FormKD).ToUpperInvariant())
+                if ((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')) normalized.Append(c);
+            string candidate = normalized.ToString();
+            if (candidate.Length < 3 || candidate.Length > 32) continue;
             foreach (string biome in biomes)
-                if (Similarity(candidate, biome) >= 0.70) return true;
+            {
+                double score = candidate == biome ? 1 : candidate.Contains(biome) ? 0.96 :
+                    biome.Contains(candidate) && candidate.Length >= 4 ? 0.82 : Similarity(candidate, biome);
+                best = Math.Max(best, score);
+            }
         }
-        return false;
+        return best;
     }
 
     private static double Similarity(string left, string right)
