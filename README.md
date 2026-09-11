@@ -17,7 +17,7 @@ You get:
 - A live, population-sorted server list, tucked away until you want it. Top 10 or 20, with filters.
 - Early leads and rapid-filling signals in a carousel or a numbered card index, plus an actionable corner notice. Switch with **Carousel / Cards** above Signals to watch; both views sort by **player count, highest first**, with signal priority breaking population ties, and share Join/Copy actions. The choice lasts while the page is open, including navigation between app pages; a reload defaults to the carousel.
 - Population graphs, observation age, open slots, and a plain-English reason for each signal.
-- Join/rejoin buttons, copyable server links, and a record of join attempts for the session.
+- Join/rejoin buttons, copyable server links, and persistent join history with a full JSON export.
 - Automatic join-time biome OCR, saved locally with raw OCR and population graph evidence for future analysis.
 - Optional desktop notifications and opt-in Windows auto-join, so you don't have to stare at the page.
 - Exact account-presence tracking, a **You are here** marker, and current-server exclusion for joins.
@@ -175,7 +175,11 @@ Desktop alerts fire once per signal episode, with one extra alert for a rapid-fi
 
 When account presence confirms that a join reached its intended Job ID, the first subsequent biome OCR match is saved locally in `biome-observations.json` beside the settings file. Each observation contains the detected biome, OCR confidence and raw text, join-time signal fields, and up to 120 recent public population observations. It contains no Roblox cookie or account identity.
 
-**Session only:** population history, signal holds, notification/auto-join deduplication, join attempts, account-presence state, OCR results, joined/current markers, and local request/cooldown tracking. A refresh or another tab shares the running backend session. Restarting the backend clears it. A recorded join means solseer attempted the handoff; the presence marker is separate evidence that Roblox reports the configured account in that Job ID.
+**Persistent join history:** `join-history.json` lives beside local settings. All attempts, their OCR biome labels, and click-time graph/signal evidence survive restarts. Join history shows the latest 200; **Export all history (JSON)** downloads every saved attempt, including unlabelled attempts. Previous sessions lost before this feature cannot be recovered. Exports contain server IDs, timestamps and OCR text; review before sharing.
+
+**Session only:** population tracking, signal holds, notification/auto-join deduplication, account-presence state, live OCR results, current-server markers, and request/cooldown tracking. A recorded join means solseer attempted the handoff; presence is separate evidence of arrival.
+
+Biome OCR filters the shared original OCR result to the biome row and uses the same tight crop for color-channel fallback: `(4,860,320,25)` at 1080p and `(5,1150,425,32)` at 1440p (x, y, width, height). The right margin accommodates longer names. Version, time-of-day and currency text are excluded; Play keeps the shared full-color pass. The 500 ms wait is unchanged.
 
 ## poking around
 

@@ -476,6 +476,19 @@ h1 {
 .current-server-identity > .current-server-biome {
   color: var(--biome-color);
 }
+.current-server-card[data-biome="Glitched"] .current-server-biome {
+  text-shadow: -1px 0 #00ffff, 1px 0 #ff00ff;
+}
+.current-server-card[data-biome="Glitched"] .current-server-aura > i:nth-child(odd) {
+  background: #00ffff;
+}
+.current-server-card[data-biome="Glitched"] .current-server-aura > i:nth-child(even) {
+  background: #ff00ff;
+}
+.current-server-card[data-biome="Null"] .current-server-biome {
+  /* Keep the guide's charcoal fill distinguishable from the dark card. */
+  text-shadow: -1px 0 #b0b0b0, 1px 0 #b0b0b0, 0 -1px #b0b0b0, 0 1px #b0b0b0;
+}
 .current-server-card-copy > small,
 .current-server-card-state > small {
   display: block;

@@ -25,7 +25,7 @@ try {
   console.error(error.message);
   process.exit(1);
 }
-const store = new Store();
+const store = new Store(settings.directory);
 const biomeObservations = new FeedbackCollector(settings.directory);
 const robloxFetch = settings.request;
 const settingsToken = randomBytes(32).toString("hex");
@@ -214,6 +214,16 @@ const server = http.createServer(async (req, res) => {
         "X-Accel-Buffering": "no",
       });
       streams.add(res);
+      return;
+    }
+    if (url.pathname === "/api/joins/export" && req.method === "GET") {
+      res.setHeader("Content-Type", "application/json");
+      res.setHeader(
+        "Content-Disposition",
+        'attachment; filename="solseer-join-history.json"',
+      );
+      res.setHeader("Cache-Control", "no-store");
+      res.end(JSON.stringify(store.exportHistory(), null, 2));
       return;
     }
     if (url.pathname === "/api/snapshot" && req.method === "GET") {

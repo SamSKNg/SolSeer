@@ -60,6 +60,9 @@ internal static class SolseerScreenHelper
     private static bool stopping;
     private static int playMatches;
     private static DateTime lastClick = DateTime.MinValue;
+    private static IntPtr zoomWindow = IntPtr.Zero;
+    private static int zoomNotches;
+    private static DateTime zoomDeadline;
 
     [DllImport("user32.dll")] private static extern bool SetProcessDPIAware();
     [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
@@ -92,7 +95,7 @@ internal static class SolseerScreenHelper
         public int Width;
         public int Height;
         public Rectangle OcrRegion;
-        public Size BiomeSize;
+        public Rectangle BiomeRegion;
         public int PlayX;
         public int PlayY;
     }
@@ -129,7 +132,8 @@ internal static class SolseerScreenHelper
                 Width = 1920,
                 Height = 1080,
                 OcrRegion = new Rectangle(0, 780, 600, 290),
-                BiomeSize = new Size(460, 170),
+                // Relative to the shared capture: absolute (4, 860, 320, 25).
+                BiomeRegion = new Rectangle(4, 80, 320, 25),
                 PlayX = 264,
                 PlayY = 1000
             };
@@ -139,7 +143,8 @@ internal static class SolseerScreenHelper
             Width = 2560,
             Height = 1440,
             OcrRegion = new Rectangle(0, 1080, 760, 359),
-            BiomeSize = new Size(600, 220),
+            // 1440p reference: absolute (5, 1150, 425, 32).
+            BiomeRegion = new Rectangle(5, 70, 425, 32),
             PlayX = 342,
             PlayY = 1331
         };
@@ -161,7 +166,7 @@ internal static class SolseerScreenHelper
             if (!TryGetRobloxWindow(out window)) status = "roblox_not_foreground";
             else if (!IsFullscreen(window, profile)) status = "maximize_resolution";
             else status = "scanning";
-            if (status != "scanning") playMatches = 0;
+            if (status != "scanning") { playMatches = 0; zoomNotches = 0; }
             if (status != previousStatus)
             {
                 Emit(Status(status, StatusMessage(status, profile)));
@@ -174,9 +179,10 @@ internal static class SolseerScreenHelper
                     FrameReading reading = await CaptureAndRead(engine, window, profile);
                     string ocrText = reading.BiomeText;
                     // Discard a frame if focus changed while recognition was running.
-                    if (!IsForeground(window)) { playMatches = 0; await Task.Delay(500); continue; }
+                    if (!IsForeground(window)) { playMatches = 0; zoomNotches = 0; await Task.Delay(500); continue; }
                     bool biomeFound = LooksLikeBiome(ocrText);
                     bool playFound = LooksLikePlay(reading.OriginalText);
+                    StepZoomOut(window, profile, playFound);
                     playMatches = autoStart && playFound ? playMatches + 1 : 0;
                     bool clicked = false;
                     bool clickAttempted = false;
@@ -191,6 +197,9 @@ internal static class SolseerScreenHelper
                             {
                                 lastClick = DateTime.UtcNow;
                                 playMatches = 0;
+                                zoomWindow = current.Handle;
+                                zoomNotches = 80;
+                                zoomDeadline = DateTime.UtcNow.AddSeconds(20);
                             }
                         }
                     }
@@ -307,18 +316,34 @@ internal static class SolseerScreenHelper
             }
             finally { bitmap.UnlockBits(data); }
 
-            string original = await ReadPixels(engine, pixels, bitmap.Width, bitmap.Height);
-            FrameReading reading = new FrameReading { OriginalText = original, BiomeText = original };
+            OcrResult originalResult = await ReadPixelResult(engine, pixels, bitmap.Width, bitmap.Height);
+            string original = originalResult.Text ?? "";
+            StringBuilder biomeText = new StringBuilder();
+            foreach (OcrLine line in originalResult.Lines)
+                foreach (OcrWord word in line.Words)
+                {
+                    Windows.Foundation.Rect box = word.BoundingRect;
+                    if (profile.BiomeRegion.Contains((int)(box.X + box.Width / 2), (int)(box.Y + box.Height / 2)))
+                        biomeText.Append(word.Text).Append(' ');
+                }
+            FrameReading reading = new FrameReading { OriginalText = original, BiomeText = biomeText.ToString().Trim() };
             // Retry only uncertain in-game reads, using the same captured frame.
             // Play is always classified from the original full-color pass.
-            if (!LooksLikeBiome(original) && !LooksLikePlay(original) && IsForeground(window))
+            if (!LooksLikeBiome(reading.BiomeText) && !LooksLikePlay(original) && IsForeground(window))
             {
                 int channel;
-                byte[] enhanced = SelectColorChannel(pixels, bitmap.Width, profile.BiomeSize, out channel);
+                Rectangle crop = profile.BiomeRegion;
+                byte[] cropped = new byte[crop.Width * crop.Height * 4];
+                for (int y = 0; y < crop.Height; y++)
+                    System.Buffer.BlockCopy(pixels, ((crop.Y + y) * bitmap.Width + crop.X) * 4,
+                        cropped, y * crop.Width * 4, crop.Width * 4);
+                byte[] enhanced = SelectColorChannel(cropped, crop.Width, crop.Size, out channel);
                 if (enhanced != null)
                 {
-                    string retry = await ReadPixels(engine, enhanced, profile.BiomeSize.Width, profile.BiomeSize.Height);
-                    if (LooksLikeBiome(retry))
+                    string retry = (await ReadPixelResult(engine, enhanced, crop.Width, crop.Height)).Text ?? "";
+                    // Preserve uncertain retry text for live candidate/confidence
+                    // reporting. Acceptance still happens in the biome matcher.
+                    if (!String.IsNullOrWhiteSpace(retry))
                     {
                         reading.BiomeText = retry;
                         reading.Channel = new string[] { "blue", "green", "red" }[channel];
@@ -377,7 +402,7 @@ internal static class SolseerScreenHelper
         return output;
     }
 
-    private static async Task<string> ReadPixels(OcrEngine engine, byte[] pixels, int width, int height)
+    private static async Task<OcrResult> ReadPixelResult(OcrEngine engine, byte[] pixels, int width, int height)
     {
             Windows.Storage.Streams.Buffer buffer = new Windows.Storage.Streams.Buffer((uint)pixels.Length);
             IntPtr destination;
@@ -388,7 +413,7 @@ internal static class SolseerScreenHelper
                 buffer, BitmapPixelFormat.Bgra8, width, height, BitmapAlphaMode.Premultiplied))
             {
                 OcrResult result = await Await(engine.RecognizeAsync(softwareBitmap));
-                return result.Text ?? "";
+                return result;
             }
     }
 
@@ -464,7 +489,28 @@ internal static class SolseerScreenHelper
         return 1.0 - ((double)distance[left.Length, right.Length] / Math.Max(left.Length, right.Length));
     }
 
-    private static bool SendMouse(uint flag, int x = 0, int y = 0)
+    // Run a bounded wheel burst alongside OCR, after the menu disappears.
+    // Never refocus Roblox or continue a queued burst after an alt-tab.
+    private static void StepZoomOut(RobloxWindow window, ScreenProfile profile, bool playFound)
+    {
+        if (zoomNotches <= 0) return;
+        if (stopping || window.Handle != zoomWindow || !IsForeground(window) ||
+            !IsFullscreen(window, profile) || DateTime.UtcNow >= zoomDeadline)
+        { zoomNotches = 0; return; }
+        if (playFound || DateTime.UtcNow - lastClick < TimeSpan.FromSeconds(1.5)) return;
+        // Keep the wheel over the world, away from scrollable HUD panels.
+        if (!SetCursorPos(window.Monitor.Left + profile.OcrRegion.Width + 200,
+            window.Monitor.Top + profile.OcrRegion.Y / 2))
+        { zoomNotches = 0; return; }
+        for (int i = 0; i < 10 && zoomNotches > 0; i++)
+        {
+            if (stopping || !IsForeground(window) || !SendMouse(0x0800, 0, 0, -120))
+            { zoomNotches = 0; return; }
+            zoomNotches--;
+        }
+    }
+
+    private static bool SendMouse(uint flag, int x = 0, int y = 0, int wheel = 0)
     {
         Input input = new Input();
         input.Type = 0;
@@ -474,7 +520,7 @@ internal static class SolseerScreenHelper
             {
                 X = x,
                 Y = y,
-                MouseData = 0,
+                MouseData = unchecked((uint)wheel),
                 Flags = flag,
                 Time = 0,
                 ExtraInfo = UIntPtr.Zero

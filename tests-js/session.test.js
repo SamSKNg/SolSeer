@@ -4,6 +4,9 @@ import { Store } from "../src/server/store.js";
 import { Tracker } from "../src/server/tracker.js";
 import { spawn } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 test("joins and quota exist only in their session; fresh sessions have no startup wait", () => {
   const first = new Store();
@@ -53,9 +56,11 @@ test("session join list is bounded, summaries count every click and returned dat
 });
 
 test(
-  "restarting the HTTP backend clears join history; refreshing within a session does not",
+  "restarting the HTTP backend preserves join history and exports all attempts",
   { timeout: 15000 },
-  async () => {
+  async (t) => {
+    const directory = mkdtempSync(join(tmpdir(), "solseer-session-test-"));
+    t.after(() => rmSync(directory, { recursive: true, force: true }));
     const base = "http://127.0.0.1:3198";
     for (let session = 0; session < 2; session++) {
       const child = spawn(process.execPath, ["src/server/index.js"], {
@@ -63,6 +68,7 @@ test(
           ...process.env,
           PORT: "3198",
           CLUSTER_NO_POLL: "1",
+          SOLSEER_CONFIG_DIR: directory,
           ROBLOX_SECURITY_COOKIE: "",
         },
         stdio: ["ignore", "pipe", "pipe"],
@@ -79,13 +85,16 @@ test(
         assert.ok(ready, "Session backend started");
         const snapshot = async () =>
           (await fetch(base + "/api/snapshot")).json();
-        assert.equal((await snapshot()).totalJoins, 0);
+        assert.equal((await snapshot()).totalJoins, session);
         await fetch(base + "/api/join/session-job", {
           method: "POST",
           redirect: "manual",
         });
-        assert.equal((await snapshot()).totalJoins, 1);
-        assert.equal((await snapshot()).totalJoins, 1);
+        assert.equal((await snapshot()).totalJoins, session + 1);
+        assert.equal((await snapshot()).totalJoins, session + 1);
+        const exported = await fetch(base + "/api/joins/export");
+        assert.match(exported.headers.get("content-disposition"), /attachment/);
+        assert.equal((await exported.json()).joins.length, session + 1);
       } finally {
         child.kill();
         if (child.exitCode === null)

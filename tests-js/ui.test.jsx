@@ -643,7 +643,8 @@ test("the exact current server is marked and cannot be joined again", () => {
   expect(within(card).getByText("Seer")).toBeTruthy();
   expect(within(card).getByText("Glitched")).toBeTruthy();
   expect(within(card).getByText(/last detected biome/)).toBeTruthy();
-  expect(card.style.getPropertyValue("--biome-color")).toBe("#fa5cdd");
+  expect(card.style.getPropertyValue("--biome-color")).toBe("#e5ffff");
+  expect(card.getAttribute("data-biome")).toBe("Glitched");
   expect(screen.getAllByText(/You are here/).length).toBeGreaterThan(0);
   expect(screen.getByRole("button", { name: "Current server" }).disabled).toBe(
     true,

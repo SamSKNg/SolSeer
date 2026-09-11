@@ -45,20 +45,22 @@ import {
 
 const labels = signalLabels;
 const biomeColors = {
+  // Matched visually to the heading fills in the supplied August 2026 guide.
+  // Biomes absent from that guide retain their existing colors.
   Normal: "#c7ccd3",
-  Windy: "#a7e8f5",
-  Snowy: "#e3f6ff",
-  Rainy: "#5e91ff",
-  Sandstorm: "#d7ad61",
-  Hell: "#ff5147",
-  Starfall: "#9581ff",
-  Heaven: "#ffe4a1",
-  Corruption: "#b94aff",
-  Null: "#80efc4",
-  Glitched: "#fa5cdd",
-  Dreamspace: "#d184ff",
-  Cyberspace: "#35dcff",
-  Singularity: "#ffca64",
+  Windy: "#9fcfe0",
+  Snowy: "#dedede",
+  Rainy: "#5865ed",
+  Sandstorm: "#be8b45",
+  Hell: "#b63217",
+  Starfall: "#286bbd",
+  Heaven: "#ebd36a",
+  Corruption: "#713dbe",
+  Null: "#505050",
+  Glitched: "#e5ffff",
+  Dreamspace: "#c77aba",
+  Cyberspace: "#537bde",
+  Singularity: "#d58a6d",
   "Pumpkin Moon": "#ff842f",
   Graveyard: "#989bad",
   "Blazing Sun": "#ffb936",
@@ -526,6 +528,7 @@ export function App() {
           {tab === "servers" && currentServerId && (
             <section
               className="current-server-card"
+              data-biome={currentBiome}
               aria-label="Current Roblox server"
               data-reveal="visible"
               style={{ "--biome-color": currentBiomeColor }}
@@ -598,10 +601,7 @@ export function App() {
                       <ScanLine size={14} aria-hidden="true" />
                       {data.automation.status !== "scanning"
                         ? data.automation.message
-                        : data.automation?.biome
-                          ? `${data.automation.biome}${data.automation.biomeFresh ? " · live OCR" : " · last OCR"}`
-                          : data.automation?.message ||
-                            "Starting fullscreen OCR…"}
+                        : "Live OCR"}
                       {data.automation.lastScanAt != null && (
                         <span title="Text similarity to the closest known biome, not an OCR accuracy probability.">
                           {" · "}
@@ -612,9 +612,6 @@ export function App() {
                       )}
                     </p>
                   )}
-                  <span className="subtle">
-                    {alerts.length} signals · population descending
-                  </span>
                   <button
                     type="button"
                     className="auto-join-toggle"
@@ -1003,6 +1000,12 @@ export function App() {
             <section className="panel" data-reveal="visible">
               <div className="panel-heading">
                 <h2>Opened servers</h2>
+                <a
+                  href="/api/joins/export"
+                  download="solseer-join-history.json"
+                >
+                  Export all history (JSON)
+                </a>
                 <span className="subtle">
                   Latest 200 attempts · join biomes are captured by OCR and
                   saved locally with graph evidence

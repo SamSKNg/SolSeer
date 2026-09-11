@@ -1,4 +1,12 @@
-// One store per backend session. No filesystem, SQLite, or browser storage.
+// Polling budgets are session-only; join history can be persisted locally.
+import {
+  existsSync,
+  readFileSync,
+  mkdirSync,
+  writeFileSync,
+  renameSync,
+} from "node:fs";
+import { join } from "node:path";
 import { AUTHENTICATED_POLLING } from "./polling-config.js";
 import { randomUUID } from "node:crypto";
 import { BIOMES } from "../shared/biomes.js";
@@ -31,6 +39,70 @@ export class Store {
   #attempts = [];
   #cooldownUntil = 0;
   #nextId = 1;
+  #firstSessionId = 1;
+  #directory;
+
+  constructor(directory) {
+    this.#directory = directory;
+    if (!directory || !existsSync(join(directory, "join-history.json"))) return;
+    const data = JSON.parse(
+      readFileSync(join(directory, "join-history.json"), "utf8"),
+    );
+    if (
+      data.version !== 1 ||
+      !Array.isArray(data.joins) ||
+      data.joins.some(
+        (row) =>
+          !Number.isSafeInteger(row.id) ||
+          row.id < 1 ||
+          typeof row.jobId !== "string" ||
+          !Number.isFinite(row.at),
+      )
+    )
+      throw new Error(
+        "Invalid join history; the existing file has not been overwritten.",
+      );
+    this.#history = data.joins
+      .map(({ joinObservations = [], joinSignal = {}, ...row }) => {
+        Object.defineProperties(row, {
+          joinObservations: { value: joinObservations },
+          joinSignal: { value: joinSignal },
+        });
+        return row;
+      })
+      .sort((a, b) => b.at - a.at || b.id - a.id);
+    for (const row of this.#history) {
+      this.#nextId = Math.max(this.#nextId, row.id + 1);
+      const previous = this.#joined.get(row.jobId);
+      this.#joined.set(row.jobId, {
+        count: (previous?.count ?? 0) + 1,
+        at: Math.max(previous?.at ?? row.at, row.at),
+      });
+    }
+    this.#firstSessionId = this.#nextId;
+  }
+
+  exportHistory() {
+    return {
+      version: 1,
+      joins: this.#history.map((row) => ({
+        ...row,
+        joinObservations: row.joinObservations,
+        joinSignal: row.joinSignal,
+      })),
+    };
+  }
+
+  #persist() {
+    if (!this.#directory) return;
+    mkdirSync(this.#directory, { recursive: true });
+    const target = join(this.#directory, "join-history.json");
+    const temporary = target + ".tmp";
+    writeFileSync(temporary, JSON.stringify(this.exportHistory()), {
+      mode: 0o600,
+    });
+    renameSync(temporary, target);
+  }
 
   join(row, now = Date.now()) {
     const entry = {
@@ -57,16 +129,16 @@ export class Store {
     });
     this.#history.push(entry);
     this.#history.sort((a, b) => b.at - a.at || b.id - a.id);
-    this.#history = this.#history.slice(0, 200);
     const previous = this.#joined.get(row.id);
     this.#joined.set(row.id, {
       count: (previous?.count ?? 0) + 1,
       at: Math.max(previous?.at ?? now, now),
     });
+    this.#persist();
     return { ...entry };
   }
   joins() {
-    return this.#history.map((row) => ({ ...row }));
+    return this.#history.slice(0, 200).map((row) => ({ ...row }));
   }
   summary() {
     return Object.fromEntries(
@@ -77,10 +149,14 @@ export class Store {
     if (!BIOMES.includes(reading?.biome)) return null;
     const detectedAt = Number(reading.biomeAt);
     if (!Number.isFinite(detectedAt) || detectedAt < observedAfter) return null;
-    const entry = this.#history.find(
-      (row) => row.jobId === jobId && row.biome == null && detectedAt >= row.at,
-    );
-    if (!entry) return null;
+    const entry = this.#history.find((row) => row.jobId === jobId);
+    if (
+      !entry ||
+      entry.id < this.#firstSessionId ||
+      entry.biome != null ||
+      detectedAt < entry.at
+    )
+      return null;
     entry.biome = reading.biome;
     entry.biomeConfidence = Number.isFinite(reading.biomeConfidence)
       ? reading.biomeConfidence
@@ -88,6 +164,7 @@ export class Store {
     entry.biomeDetectedAt = detectedAt;
     entry.biomeText = String(reading.biomeText ?? "").slice(0, 1000);
     entry.biomeSource = "windows_ocr";
+    this.#persist();
     return { ...entry };
   }
   biomeExample(id, current, now = Date.now()) {
