@@ -163,7 +163,8 @@ export class Store {
       : null;
     entry.biomeDetectedAt = detectedAt;
     entry.biomeText = String(reading.biomeText ?? "").slice(0, 1000);
-    entry.biomeSource = "windows_ocr";
+    entry.biomeSource =
+      reading.biomeSource === "tesseract" ? "tesseract" : "windows_ocr";
     this.#persist();
     return { ...entry };
   }

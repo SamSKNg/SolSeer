@@ -132,7 +132,12 @@ export class ScreenAutomation {
     if (!this.state.supported || this.child) return;
     const child = this.spawnFn(
       this.helperPath,
-      [this.state.resolution, this.autoStart ? "autostart" : "ocr-only"],
+      [
+        this.state.resolution,
+        this.autoStart ? "autostart" : "ocr-only",
+        process.execPath,
+        fileURLToPath(new URL("./tesseract-worker.js", import.meta.url)),
+      ],
       {
         windowsHide: true,
         stdio: ["ignore", "pipe", "pipe"],
@@ -145,9 +150,12 @@ export class ScreenAutomation {
       status: "starting",
       message: "Starting Windows OCR.",
     };
-    child.stdout?.on("data", (chunk) => this.#read(chunk));
+    child.stdout?.on("data", (chunk) => {
+      if (this.child === child) this.#read(chunk);
+    });
     child.stderr?.on("data", () => {});
     child.on("error", () => {
+      if (this.child !== child) return;
       this.state = {
         ...this.state,
         status: "error",
@@ -208,6 +216,11 @@ export class ScreenAutomation {
                   : "Play screen detected."
                 : "Reading the maximized Roblox window.",
           biome: matched?.biome ?? this.state.biome,
+          biomeSource: matched
+            ? event.ocrEngine === "tesseract"
+              ? "tesseract"
+              : "windows_ocr"
+            : this.state.biomeSource,
           biomeConfidence: matched?.confidence ?? this.state.biomeConfidence,
           biomeText: matched
             ? String(event.biomeText ?? "").slice(0, 1000)

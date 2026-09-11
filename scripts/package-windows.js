@@ -11,6 +11,7 @@ import { resolve, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import { copyOcrRuntime } from "./copy-ocr-runtime.js";
 
 if (process.platform !== "win32" || !["x64", "arm64"].includes(process.arch))
   throw new Error("Build this portable package on Windows x64 or arm64.");
@@ -76,7 +77,8 @@ for (const name of ["react", "react-dom", "scheduler", "lucide-react"]) {
     join(app, "licenses", `${name}-LICENSE.txt`),
   );
 }
-// Explicit allowlist. Never copy a project root, .env, profile, session data or node_modules.
+// Explicit runtime dependency allowlist; never copy the whole project or node_modules.
+await copyOcrRuntime(root, app);
 for (const folder of ["server", "shared"]) {
   const destination = join(app, "src", folder);
   await mkdir(destination, { recursive: true });
@@ -128,7 +130,7 @@ await writeFile(
   startHere
     .replace(
       "Biome OCR runs whenever solseer is open and requires foreground, maximized Roblox at the 1920x1080 or 2560x1440 resolution selected in Settings. Auto-Start is optional and off by default; it adds zooming with O after repeated unclear in-game reads and clicks Play through Windows SendInput after two fuzzy matches.",
-      "Biome OCR reads one combined biome-and-Play region while Roblox is foreground and maximized at the 1920x1080 or 2560x1440 resolution selected in Settings. Scanning pauses when you switch apps. Auto-Start optionally clicks Play and sends a bounded zoom-out wheel burst after the menu disappears; switching apps cancels the burst.",
+      "A shared capture feeds Tesseract for biome text and Windows OCR for Play while Roblox is foreground and maximized at the 1920x1080 or 2560x1440 resolution selected in Settings. English OCR data is bundled; no model download is needed at runtime. Scanning pauses when you switch apps. Auto-Start optionally clicks Play and sends 10 zoom-out wheel steps after the menu disappears; switching apps cancels the burst.",
     )
     .replace("biome feedback", "biome observations")
     .replace("Server observations and joins last only for the running session.", "Live server observations last for the running session. Join history persists beside local settings and can be exported as JSON from Join history."),

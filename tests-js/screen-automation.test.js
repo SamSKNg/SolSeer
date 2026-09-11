@@ -35,7 +35,9 @@ test("biome OCR stays active with Auto-Start off and keeps the last reading", ()
     now: () => now,
   });
   automation.configure({ autoStart: false, ocrResolution: "1080p" });
-  assert.deepEqual(spawnedArgs, ["1080p", "ocr-only"]);
+  assert.deepEqual(spawnedArgs.slice(0, 2), ["1080p", "ocr-only"]);
+  assert.equal(spawnedArgs[2], process.execPath);
+  assert.ok(spawnedArgs[3].endsWith("tesseract-worker.js"));
   assert.equal(automation.snapshot().enabled, true);
   assert.equal(automation.snapshot().autoStart, false);
   child.stdout.write(

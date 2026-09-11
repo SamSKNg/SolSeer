@@ -13,7 +13,7 @@ const validDocument = (value) =>
     (example) =>
       typeof example?.feedbackId === "string" &&
       BIOMES.includes(example.biome) &&
-      example.source === "windows_ocr",
+      ["windows_ocr", "tesseract"].includes(example.source),
   );
 
 export class FeedbackCollector {

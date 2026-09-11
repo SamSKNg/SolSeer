@@ -63,6 +63,7 @@ internal static class SolseerScreenHelper
     private static IntPtr zoomWindow = IntPtr.Zero;
     private static int zoomNotches;
     private static DateTime zoomDeadline;
+    private static Process biomeWorker;
 
     [DllImport("user32.dll")] private static extern bool SetProcessDPIAware();
     [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
@@ -112,6 +113,7 @@ internal static class SolseerScreenHelper
         try
         {
             SetProcessDPIAware();
+            if (args != null && args.Length >= 4) StartBiomeWorker(args[2], args[3]);
             bool autoStart = args != null && args.Length > 1 && String.Equals(args[1], "autostart", StringComparison.OrdinalIgnoreCase);
             Run(ProfileFor(args), autoStart).GetAwaiter().GetResult();
             return 0;
@@ -121,6 +123,42 @@ internal static class SolseerScreenHelper
             Emit(Status("error", "Windows OCR could not start."));
             return 1;
         }
+        finally
+        {
+            if (biomeWorker != null)
+            {
+                try { biomeWorker.StandardInput.Close(); if (!biomeWorker.WaitForExit(1000)) biomeWorker.Kill(); } catch { }
+                biomeWorker.Dispose();
+            }
+        }
+    }
+
+    private static void StartBiomeWorker(string node, string script)
+    {
+        biomeWorker = new Process();
+        biomeWorker.StartInfo = new ProcessStartInfo(node, "\"" + script + "\"") {
+            UseShellExecute = false, CreateNoWindow = true, RedirectStandardInput = true,
+            RedirectStandardOutput = true, RedirectStandardError = true
+        };
+        biomeWorker.Start();
+        biomeWorker.ErrorDataReceived += delegate { };
+        biomeWorker.BeginErrorReadLine();
+        string ready = ReadWorkerLine(30000).GetAwaiter().GetResult();
+        var result = Json.Deserialize<Dictionary<string, object>>(ready);
+        if (!result.ContainsKey("ready")) throw new InvalidOperationException("Tesseract failed to initialize.");
+    }
+
+    private static async Task<string> ReadWorkerLine(int timeoutMs)
+    {
+        var read = biomeWorker.StandardOutput.ReadLineAsync();
+        if (await Task.WhenAny(read, Task.Delay(timeoutMs)) != read)
+        {
+            try { biomeWorker.Kill(); } catch { }
+            throw new TimeoutException("Tesseract timed out.");
+        }
+        string line = await read;
+        if (line == null) throw new InvalidOperationException("Tesseract stopped.");
+        return line;
     }
 
     private static ScreenProfile ProfileFor(string[] args)
@@ -208,6 +246,7 @@ internal static class SolseerScreenHelper
                     scan["status"] = "scanning";
                     scan["biomeText"] = ocrText;
                     scan["ocrChannel"] = reading.Channel;
+                    scan["ocrEngine"] = biomeWorker == null ? "windows_ocr" : "tesseract";
                     scan["biomeFound"] = biomeFound;
                     scan["playFound"] = playFound;
                     scan["clickAttempted"] = clickAttempted;
@@ -318,6 +357,24 @@ internal static class SolseerScreenHelper
 
             OcrResult originalResult = await ReadPixelResult(engine, pixels, bitmap.Width, bitmap.Height);
             string original = originalResult.Text ?? "";
+            if (biomeWorker != null)
+            {
+                FrameReading tesseract = new FrameReading { OriginalText = original, BiomeText = "" };
+                if (!LooksLikePlay(original) && IsForeground(window))
+                {
+                    Rectangle crop = profile.BiomeRegion;
+                    byte[] cropped = new byte[crop.Width * crop.Height * 4];
+                    for (int y = 0; y < crop.Height; y++)
+                        System.Buffer.BlockCopy(pixels, ((crop.Y + y) * bitmap.Width + crop.X) * 4, cropped, y * crop.Width * 4, crop.Width * 4);
+                    biomeWorker.StandardInput.WriteLine(Json.Serialize(new {width=crop.Width,height=crop.Height,pixels=Convert.ToBase64String(cropped)}));
+                    biomeWorker.StandardInput.Flush();
+                    var result = Json.Deserialize<Dictionary<string, object>>(await ReadWorkerLine(8000));
+                    if (result.ContainsKey("error")) throw new InvalidOperationException("Tesseract scan failed.");
+                    tesseract.BiomeText = (string)result["text"];
+                    tesseract.Channel = (string)result["channel"];
+                }
+                return tesseract;
+            }
             StringBuilder biomeText = new StringBuilder();
             foreach (OcrLine line in originalResult.Lines)
                 foreach (OcrWord word in line.Words)

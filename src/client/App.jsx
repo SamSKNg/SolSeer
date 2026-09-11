@@ -1046,7 +1046,7 @@ export function App() {
                             }
                             title={
                               j.biome
-                                ? `Windows OCR · ${Math.round((j.biomeConfidence ?? 0) * 100)}% match`
+                                ? `${j.biomeSource === "tesseract" ? "Tesseract" : "Windows OCR"} · ${Math.round((j.biomeConfidence ?? 0) * 100)}% match`
                                 : "Waiting for account presence and a biome OCR match"
                             }
                           >
