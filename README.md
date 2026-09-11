@@ -23,7 +23,7 @@ You get:
 - Exact account-presence tracking, a **You are here** marker, and current-server exclusion for joins.
 - Always-on 1080p/1440p fullscreen biome OCR, optional Play automation, and user-selected biomes that pause auto-join.
 
-Population signals still do not confirm a biome. A separate Windows-only OCR helper reads the visible biome label while Roblox is foreground, even when Auto-Start is off; it does not inject into Roblox. Auto-Start controls only the optional Play click. A friend group joining together can look like a rare-biome rush, and OCR can misread stylized text. False positives are part of the tradeoff here.
+Population signals still do not confirm a biome. A separate Windows-only OCR helper reads the visible biome label while Roblox is foreground, even when Auto-Start is off; it does not inject into Roblox. Auto-Start controls the optional Play click and subsequent zoom-out. A friend group joining together can look like a rare-biome rush, and OCR can misread stylized text. False positives are part of the tradeoff here.
 
 ### joining a server
 
@@ -35,7 +35,13 @@ On Windows, the **Auto-join** toggle beside **Signals to watch** launches the in
 
 With a valid cookie, solseer checks the configured account's Roblox presence every five seconds. When Roblox reports the exact Sol's RNG Job ID, a compact biome-colored current-server card appears below the tracker statistics with large server, username, and biome labels. That server also gets a **You are here** marker and its Join control is disabled. Auto-join excludes it and refreshes presence once more immediately before launching another server. Presence can lag or hide the Job ID, and private/reserved instances may not appear in the public list.
 
-Biome OCR reads the foreground, maximized Roblox window at the **1920 × 1080** or **2560 × 1440** resolution selected in Settings. Scanning pauses when you switch apps and resumes when Roblox returns to foreground. One combined in-memory screen crop and one OCR operation classify both known biomes and the Play marker at a 70% fuzzy-match threshold, with a 500 ms wait after each cycle. The adjacent **Auto-Start** toggle only enables the Play click; it does not start a second OCR pipeline or send zoom keys. A selected target biome remains an Auto-join veto through focus loss and unclear or stale frames, until OCR recognizes another biome.
+Biome OCR reads the foreground, maximized Roblox window at the **1920 × 1080** or **2560 × 1440** resolution selected in Settings. Scanning pauses when you switch apps and resumes when Roblox returns to foreground. A shared in-memory capture feeds the original OCR pass for both the biome row and Play marker. If biome recognition is uncertain and Play is not detected, the helper selects one color channel from the tight biome crop, stretches its contrast, and runs one fallback OCR pass—not three separate channel scans. Matching accepts candidates at 70% text similarity. Each cycle finishes with a **500 ms wait**, so capture and OCR work add to the effective interval.
+
+The inline **Live OCR** status shows the latest scan's candidate and match percentage, including below-threshold candidates; it does not repeat the stored current/last biome. “No readable text” means there is no usable candidate for that scan. Match percentages measure text similarity, not the probability that OCR is correct. The current-server card separately retains the last accepted biome, with biome-colored accents and left-to-right particles. Its guide-listed colors follow the supplied biome infographic, including Glitched's cyan/magenta accents.
+
+The adjacent **Auto-Start** toggle clicks Play after two matching scans. After the menu disappears and at least 1.5 seconds have passed, it moves the pointer over the game view and sends a bounded mouse-wheel zoom-out burst alongside continued OCR. Switching apps cancels the queued burst; it never brings Roblox back into focus. This requests zoom-out up to the game's camera limit, but maximum zoom has not yet been verified in-game. Auto-Start does not create a second persistent OCR pipeline.
+
+A selected target biome remains an Auto-join veto through focus loss and unclear or stale frames, until OCR recognizes another biome.
 
 Every manual or automatic join starts a **60-second auto-join cooldown**, preventing another signal from switching servers while Roblox is waiting at or loading past the Play screen. When Auto-Start has clicked Play and a later biome reading confirms the game view is ready, that cooldown ends early. The current-server card shows the remaining cooldown when presence is available.
 
@@ -73,7 +79,7 @@ The signal carousel, card index, and live list contain only fresh servers and so
 
 Signal priority puts fresh candidates with open slots first, then full candidates. Within those groups, active growth comes before retained bursts; rapid filling comes before early growth. Peer-relative growth, follow-up confirmation, observed growth pace, freshness, and a stable server ID break ties. The actionable corner notice and desktop notifications retain this urgency-based ranking rather than following the population display order.
 
-There is **no biome confidence percentage or weighted mystery score**. `Pace /10s` just normalizes observed net growth to ten seconds. For example, +2 in 5 seconds is a pace of 4 per 10 seconds. That's a description of the sampled movement, not a prediction that four more people are coming.
+Population signals have **no biome probability or weighted mystery score**. The separate Live OCR percentage describes text matching only. `Pace /10s` just normalizes observed net growth to ten seconds. For example, +2 in 5 seconds is a pace of 4 per 10 seconds. That's a description of the sampled movement, not a prediction that four more people are coming.
 
 ### comparing growth with nearby populations
 
@@ -122,7 +128,7 @@ The app listens on your machine only. This is a local tool, not a hosted service
 
 ### windows, without installing node
 
-Grab the [v0.5.0 Windows x64 ZIP](https://github.com/SamSKNg/SolSeer/releases/download/v0.5.0/solseer-v0.5.0-windows-x64.zip). See the [release notes](docs/releases/v0.5.0.md) for what changed. When updating, stop the old copy and extract the new ZIP into a fresh folder; your saved cookie, notification preferences, and biome observations stay in their separate local settings folder.
+Grab the [v0.5.1 Windows x64 ZIP](https://github.com/SamSKNg/SolSeer/releases/download/v0.5.1/solseer-v0.5.1-windows-x64.zip). See the [v0.5.1 release notes](https://github.com/SamSKNg/SolSeer/releases/tag/v0.5.1) for what changed. When updating, stop the old copy and extract the new ZIP into a fresh folder; your saved cookie, notification preferences, join history, and biome observations stay in their separate local settings folder. Join attempts from older sessions that were never persisted cannot be recovered.
 
 If you have a portable ZIP, extract the whole thing and double-click **Start solseer.cmd** inside the `solseer` folder. Keep its console open; Ctrl+C stops it. Stop an existing copy first if the port is already occupied.
 
@@ -165,7 +171,13 @@ On Windows, `npm run start:authenticated` offers a masked, non-persistent prompt
 
 ## notifications and what survives a restart
 
-In Settings, choose early leads and/or rapid filling for desktop alerts, which tiers Auto-join may open, the 1080p/1440p OCR mode, and biomes that pause auto-join. The main Server radar page has separate Windows **Auto-join** and **Auto-Start** toggles below **Signals to watch**. Browser permission is required only for desktop alerts. Mouse and keyboard automation remain off by default.
+In Settings, choose early leads and/or rapid filling for desktop alerts, which tiers Auto-join may open, the 1080p/1440p OCR mode, and biomes that pause auto-join. The main Server radar page has separate Windows **Auto-join** and **Auto-Start** toggles below **Signals to watch**. Browser permission is required only for desktop alerts. Play-click and zoom-out automation remain off by default.
+
+**Biomes that pause auto-join** are grouped for easier selection; grouping does not change the pause behavior or existing selections:
+
+- **Normal:** Normal, Windy, Snowy, Rainy, Sandstorm, Hell, Starfall, Heaven, Corruption, Null.
+- **Rare Biomes:** Glitched, Dreamspace, Cyberspace, Singularity.
+- **Event Biomes:** Pumpkin Moon, Graveyard, Blazing Sun, Blood Rain, Aurora, Eggland, Incinerator.
 
 Keep the backend app running. Desktop alerts additionally need an open browser tab; browser permissions and OS notification settings are separate from solseer's preferences and may suppress delivery. Auto-join launches Roblox from the local Windows backend and does not require the browser tab to remain open.
 
@@ -187,7 +199,7 @@ React + Vite on the frontend, plain Node HTTP on the backend. Live updates arriv
 
 ```text
 src/client/       UI, graphs, carousel, settings
-src/server/       polling, heuristics, local API, session state
+src/server/       polling, heuristics, local API, persistent joins and session state
 src/shared/       signal ordering, notification defaults, join links
 tests-js/         backend and React tests
 scripts/          launchers, portable packaging, polling probe
