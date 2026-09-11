@@ -26,6 +26,12 @@ export const BIOME_ALIASES = Object.freeze({
   Sandstorm: ["sand storm"],
 });
 
+export const BIOME_GROUPS = Object.freeze([
+  { label: "Normal", biomes: BIOMES.slice(0, 10) },
+  { label: "Rare Biomes", biomes: BIOMES.slice(10, 14) },
+  { label: "Event Biomes", biomes: BIOMES.slice(14) },
+]);
+
 export const normalizeBiome = (value) =>
   String(value ?? "")
     .normalize("NFKD")

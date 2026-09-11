@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Bell } from "lucide-react";
 import { DEFAULT_NOTIFICATIONS } from "../shared/notifications.js";
-import { BIOMES } from "../shared/biomes.js";
+import { BIOME_GROUPS } from "../shared/biomes.js";
 import { notificationPermission } from "./useNotifications.js";
 
 export function NotificationSettings({ initial, token, ready }) {
@@ -262,28 +262,33 @@ export function NotificationSettings({ initial, token, ready }) {
             No targets are selected by default. Matching is case-insensitive and
             allows small OCR errors.
           </p>
-          <div className="biome-target-grid">
-            {BIOMES.map((biome) => (
-              <label className="settings-consent" key={biome}>
-                <input
-                  type="checkbox"
-                  checked={preferences.biomeTargets.includes(biome)}
-                  disabled={!ready || busy}
-                  onChange={(event) =>
-                    setPreferences({
-                      ...preferences,
-                      biomeTargets: event.target.checked
-                        ? [...preferences.biomeTargets, biome]
-                        : preferences.biomeTargets.filter(
-                            (item) => item !== biome,
-                          ),
-                    })
-                  }
-                />
-                {biome}
-              </label>
-            ))}
-          </div>
+          {BIOME_GROUPS.map((group) => (
+            <fieldset className="biome-target-group" key={group.label}>
+              <legend>{group.label}</legend>
+              <div className="biome-target-grid">
+                {group.biomes.map((biome) => (
+                  <label className="settings-consent" key={biome}>
+                    <input
+                      type="checkbox"
+                      checked={preferences.biomeTargets.includes(biome)}
+                      disabled={!ready || busy}
+                      onChange={(event) =>
+                        setPreferences({
+                          ...preferences,
+                          biomeTargets: event.target.checked
+                            ? [...preferences.biomeTargets, biome]
+                            : preferences.biomeTargets.filter(
+                                (item) => item !== biome,
+                              ),
+                        })
+                      }
+                    />
+                    {biome}
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+          ))}
         </fieldset>
         <div className="settings-actions">
           {permission === "default" && (
