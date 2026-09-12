@@ -31,6 +31,7 @@ const timeout = setTimeout(() => {
   app.exit(1);
 }, 30000);
 app.on("browser-window-created", (_event, window) => {
+  if (process.argv.includes("--portrait")) window.setContentSize(1080, 1800);
   if (!process.argv.includes("--visible")) window.show = () => {};
   window.webContents.once("did-finish-load", async () => {
     try {
@@ -54,6 +55,13 @@ app.on("browser-window-created", (_event, window) => {
           rows:update.rows.length, polling:update.pollIntervalMs, ocrStatus:update.automation.status};
       })()`);
       assert.equal(result.rendered, true);
+      if (process.argv.includes("--portrait")) {
+        const heroHeight = await window.webContents.executeJavaScript(
+          "document.querySelector('.page-heading').getBoundingClientRect().height",
+        );
+        assert.ok(heroHeight >= 540 && heroHeight <= 760, `Portrait hero height: ${heroHeight}`);
+        console.log("Portrait hero height:", heroHeight);
+      }
       assert.equal(result.url, "solseer://app/");
       JSON.parse(await readFile(exportPath, "utf8"));
       const prefs = window.webContents.getLastWebPreferences();

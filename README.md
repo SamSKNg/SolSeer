@@ -8,7 +8,7 @@ So the goal is simple: **spot unusual population growth early, surface a server 
 
 This is not a confirmed biome detector. It's a population tracker with some deliberately early heuristics and a UI I probably spent too long making reflective.
 
-## Desktop app (local preview)
+## Desktop app
 
 The desktop executable, app window, and browser favicon use `SolSeer Icon.png`. After replacing that source artwork, run `npm run icons` on Windows to regenerate the multi-size `.ico` and PNG in `public/`, then rebuild the app.
 
@@ -24,7 +24,7 @@ npm run build
 npm run desktop
 ```
 
-`npm run package:desktop` builds a fresh native helper in an isolated staging folder and creates a portable Windows x64 desktop ZIP under `release/desktop-*`. Keep all files next to `SolSeer.exe`; do not copy only the executable. This local preview is unsigned and may show a Windows publisher warning. It has not replaced the published browser-based v0.5.4 release.
+`npm run package:desktop` builds a fresh native helper in an isolated staging folder and creates a portable Windows x64 desktop ZIP under `release/desktop-*`. Keep all files next to `SolSeer.exe`; do not copy only the executable. The app is unsigned and may show a Windows publisher warning. Starting with v0.5.5, the primary release download is the Electron desktop app. Browser development remains supported.
 
 `npm run test:desktop` runs an isolated Electron smoke test with Roblox polling disabled. It checks the renderer sandbox, IPC settings/snapshots/export, and rejects any attempt by the backend to open a TCP listener. Existing browser development and packaging commands remain available.
 
@@ -150,7 +150,7 @@ The app listens on your machine only. This is a local tool, not a hosted service
 
 ### windows, without installing node
 
-Grab the [v0.5.4 Windows x64 ZIP](https://github.com/SamSKNg/SolSeer/releases/download/v0.5.4/solseer-v0.5.4-windows-x64.zip). See the [v0.5.4 release notes](https://github.com/SamSKNg/SolSeer/releases/tag/v0.5.4) for what changed. When updating, stop the old copy and extract the new ZIP into a fresh folder; your saved cookie, notification preferences, join history, and biome observations stay in their separate local settings folder. Join attempts from older sessions that were never persisted cannot be recovered.
+Grab the [v0.5.5 Windows desktop ZIP](https://github.com/SamSKNg/SolSeer/releases/download/v0.5.5/SolSeer-desktop-0.5.5-windows-x64.zip), extract the complete folder, and run `SolSeer.exe`. See the [v0.5.5 release notes](https://github.com/SamSKNg/SolSeer/releases/tag/v0.5.5) for what changed. When updating, stop the old copy and extract the new ZIP into a fresh folder; your saved cookie, notification preferences, join history, and biome observations stay in their separate local settings folder. Join attempts from older sessions that were never persisted cannot be recovered.
 
 If you have a portable ZIP, extract the whole thing and double-click **Start solseer.cmd** inside the `solseer` folder. Keep its console open; Ctrl+C stops it. Stop an existing copy first if the port is already occupied.
 

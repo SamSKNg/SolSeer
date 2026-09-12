@@ -63,7 +63,10 @@ test("parallax coalesces pointer events into one frame, clamps movement and retu
   const { hero, scene, frames, move, flush } = setup();
   expect(scene.dataset.parallax).toBe("on");
   expect(scene.getAttribute("aria-hidden")).toBe("true");
-  expect(scene.querySelectorAll(".shard")).toHaveLength(4);
+  expect(scene.querySelectorAll(".shard")).toHaveLength(0);
+  expect(scene.querySelectorAll(".star-head .star-spark")).toHaveLength(24);
+  expect(scene.querySelectorAll(".shooting-tail")).toHaveLength(24);
+  expect(scene.querySelector(".shooting-tail").getAttribute("d")).toBe("M0 800L0 0");
   move(0, 0);
   move(1000, 600);
   expect(frames.size).toBe(1);

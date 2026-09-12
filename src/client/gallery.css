@@ -56,7 +56,8 @@
   align-items: center;
 }
 .gallery .page-heading:not(.compact-heading) {
-  min-height: max(590px, calc(100svh - 195px));
+  /* Portrait monitors must not turn the hero into a full-height poster. */
+  min-height: clamp(590px, min(60vw, calc(100svh - 195px)), 760px);
 }
 .gallery .hero-copy {
   width: 66%;

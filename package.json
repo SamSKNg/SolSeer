@@ -1,6 +1,6 @@
 {
   "name": "sols-cluster-indicator",
-  "version": "0.5.4",
+  "version": "0.5.5",
   "private": true,
   "type": "module",
   "main": "src/desktop/main.js",
