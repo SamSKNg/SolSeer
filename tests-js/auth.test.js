@@ -179,7 +179,7 @@ test("network and response parsing failures cannot echo the cookie into snapshot
   }
 });
 
-test("authenticated failures stay within the same three-attempt budget and do not negotiate CSRF", async () => {
+test("authenticated failures retain retry delays without a local budget or CSRF negotiation", async () => {
   for (const status of [401, 403, 429]) {
     const store = new Store();
     let now = 1000000,
@@ -195,17 +195,14 @@ test("authenticated failures stay within the same three-attempt budget and do no
       }),
     });
     try {
-      for (let i = 0; i < 3; i++) {
+      for (let i = 0; i < 4; i++) {
         await tracker.poll();
-        now += 20500;
+        assert.ok(tracker.nextAt - now >= (status === 429 ? 5500 : 60000));
+        now = tracker.nextAt;
       }
-      // Go back to the still-full window to check that no fourth request is sent.
-      now = 1045000;
-      await tracker.poll();
-      assert.equal(calls, 3);
+      assert.equal(calls, 4);
       assert.equal(tracker.error, `Roblox HTTP ${status}`);
       assert.ok(!JSON.stringify(tracker.snapshot()).includes(dummy));
-      assert.equal(tracker.nextAt, 1060250);
     } finally {
       store.close();
     }

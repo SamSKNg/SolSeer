@@ -513,8 +513,8 @@ export function App() {
               <div>
                 <strong>Request delayed</strong>
                 <p>
-                  {data.error}. The tracker will retry within the available
-                  budget.
+                  {data.error}. The tracker will retry within the available rate
+                  limits.
                 </p>
               </div>
             </div>
@@ -1170,9 +1170,10 @@ export function App() {
             </span>
             <span>
               <span className="budget-readout">
-                {data.budget}/{data.requestLimit ?? 3}
+                {data.budget}
+                {data.requestLimit != null ? `/${data.requestLimit}` : ""}
               </span>{" "}
-              requests used / rolling minute ·{" "}
+              requests / rolling minute ·{" "}
               {(data.pollIntervalMs ?? 20500) / 1000}s polling · up to{" "}
               {data.pagesPerPoll ?? 1} page(s) per cycle
             </span>

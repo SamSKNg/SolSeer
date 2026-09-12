@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import { Store } from "../src/server/store.js";
 import { configuredRobloxFetch } from "../src/server/roblox-fetch.js";
 import { runPollingProbe } from "../src/server/poll-probe.js";
-import { AUTHENTICATED_POLLING } from "../src/server/polling-config.js";
+import { DIAGNOSTIC_POLLING } from "../src/server/polling-config.js";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const port = Number(process.env.PORT || 3000);
@@ -31,11 +31,11 @@ try {
   );
   store = new Store();
   console.log(
-    `Bounded top-page diagnostic: up to ${AUTHENTICATED_POLLING.requestLimit} requests, minimum ${AUTHENTICATED_POLLING.interval / 1000}s between starts. This matches the authenticated app's one-page cadence.`,
+    `Bounded top-page diagnostic: up to ${DIAGNOSTIC_POLLING.requestLimit} requests, minimum ${DIAGNOSTIC_POLLING.interval / 1000}s between starts. This test has its own safety limit, separate from live polling.`,
   );
   const results = await runPollingProbe({ store, request });
   if (
-    results.length !== AUTHENTICATED_POLLING.requestLimit ||
+    results.length !== DIAGNOSTIC_POLLING.requestLimit ||
     results.some((result) => result.status !== 200 || result.servers === null)
   )
     process.exitCode = 1;

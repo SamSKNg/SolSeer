@@ -7,6 +7,48 @@ import {
 } from "../src/server/polling-config.js";
 import { score, updateSignalHold } from "../src/server/scorer.js";
 import { Store } from "../src/server/store.js";
+import { Tracker } from "../src/server/tracker.js";
+
+test("live polling exceeds old caps but stops until Roblox's retry expires", async () => {
+  for (const authenticated of [true, false]) {
+    const store = new Store();
+    let now = 1000000,
+      calls = 0,
+      limited = false;
+    const tracker = new Tracker(store, {
+      ...pollingFor(authenticated),
+      now: () => now,
+      fetchFn: async () => {
+        calls++;
+        return limited
+          ? new Response("", { status: 429, headers: { "retry-after": "12" } })
+          : new Response('{"data":[]}');
+      },
+    });
+    tracker.configurePolling(1);
+    try {
+      for (let i = 0; i < 65; i++) {
+        await tracker.poll();
+        assert.equal(tracker.nextAt - now, 1000);
+        now = tracker.nextAt;
+      }
+      assert.equal(calls, 65);
+      assert.equal(tracker.snapshot().requestLimit, null);
+      limited = true;
+      await tracker.poll();
+      assert.equal(tracker.nextAt - now, 12500);
+      now += 1000;
+      await tracker.poll();
+      assert.equal(calls, 66);
+      now = tracker.nextAt;
+      limited = false;
+      await tracker.poll();
+      assert.equal(calls, 67);
+    } finally {
+      store.close();
+    }
+  }
+});
 
 const record = (counts) => ({
   id: "job",
@@ -24,7 +66,7 @@ const record = (counts) => ({
 test("authenticated polling uses one top page every 2s; anonymous keeps its discovery rotation", () => {
   assert.deepEqual(pollingFor(true), {
     interval: 2000,
-    requestLimit: 40,
+    requestLimit: null,
     pagesPerPoll: 1,
     coverageEvery: 0,
   });
@@ -32,7 +74,7 @@ test("authenticated polling uses one top page every 2s; anonymous keeps its disc
   assert.equal(pollingFor(false), ANONYMOUS_POLLING);
   assert.deepEqual(pollingFor(false), {
     interval: 20500,
-    requestLimit: 3,
+    requestLimit: null,
     pagesPerPoll: 1,
     coverageEvery: 3,
   });

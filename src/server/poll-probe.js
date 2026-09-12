@@ -1,6 +1,6 @@
 import { setTimeout as sleep } from "node:timers/promises";
 import { PLACE_ID } from "./tracker.js";
-import { AUTHENTICATED_POLLING } from "./polling-config.js";
+import { DIAGNOSTIC_POLLING } from "./polling-config.js";
 
 // Report only numeric quota values, never arbitrary response headers or bodies.
 export function quotaHeaders(headers) {
@@ -40,7 +40,7 @@ export async function runPollingProbe({
     await wait(initialWait);
   }
   const results = [];
-  const { interval, requestLimit } = AUTHENTICATED_POLLING;
+  const { interval, requestLimit } = DIAGNOSTIC_POLLING;
   let nextAt = now();
   for (let i = 0; i < requestLimit; i++) {
     if (nextAt > now()) await wait(nextAt - now());

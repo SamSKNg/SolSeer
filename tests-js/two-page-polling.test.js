@@ -149,8 +149,8 @@ test("page-2 failures retain page-1 results without refreshing old page-2 observ
   }
 });
 
-test("page-1 rate limits stop the pair, and exhausted headers or local quota defer page 2", async () => {
-  for (const mode of ["429", "header", "quota"]) {
+test("page-1 rate limits stop the pair and exhausted headers defer page 2", async () => {
+  for (const mode of ["429", "header"]) {
     const f = fixture(() =>
       mode === "429"
         ? new Response("", { status: 429, headers: { "retry-after": "12" } })
@@ -163,8 +163,6 @@ test("page-1 rate limits stop the pair, and exhausted headers or local quota def
           ),
     );
     try {
-      if (mode === "quota")
-        for (let i = 0; i < 39; i++) f.store.reserve(1000000, 40);
       const s = await f.poll();
       assert.equal(f.calls.length, 1);
       assert.equal(s.events[0].requests, 1);
@@ -174,7 +172,6 @@ test("page-1 rate limits stop the pair, and exhausted headers or local quota def
         assert.equal(s.events[0].deferredPage, 2);
         assert.equal(s.rows[0].players, 15);
       }
-      if (mode === "quota") assert.equal(s.budget, 40);
     } finally {
       f.store.close();
     }
@@ -190,7 +187,7 @@ test("authentication failures downgrade to anonymous one-page polling even on pa
     );
     try {
       const s = await f.poll();
-      assert.equal(s.requestLimit, 3);
+      assert.equal(s.requestLimit, null);
       assert.equal(s.pagesPerPoll, 1);
       assert.equal(s.pollIntervalMs, 20500);
       assert.ok(s.nextAt - s.now >= 60000);

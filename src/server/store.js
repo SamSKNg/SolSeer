@@ -7,7 +7,7 @@ import {
   renameSync,
 } from "node:fs";
 import { join } from "node:path";
-import { AUTHENTICATED_POLLING } from "./polling-config.js";
+import { DIAGNOSTIC_POLLING } from "./polling-config.js";
 import { randomUUID } from "node:crypto";
 import { BIOMES } from "../shared/biomes.js";
 
@@ -199,7 +199,7 @@ export class Store {
     this.#attempts = this.#attempts.filter((at) => at > now - 60000);
     return [...this.#attempts];
   }
-  reserve(now, limit = 3) {
+  reserve(now, limit = null) {
     const wait = this.availableIn(now, limit);
     // Synchronous reservation is atomic within this single Node process.
     if (!wait) {
@@ -208,11 +208,15 @@ export class Store {
     }
     return wait;
   }
-  availableIn(now, limit = 3) {
+  availableIn(now, limit = null) {
+    if (limit === null) {
+      this.requests(now); // Keep the rolling usage counter bounded, not capped.
+      return Math.max(0, this.#cooldownUntil - now);
+    }
     if (
       !Number.isInteger(limit) ||
       limit < 1 ||
-      limit > AUTHENTICATED_POLLING.requestLimit
+      limit > DIAGNOSTIC_POLLING.requestLimit
     )
       throw new Error("Invalid request budget");
     const sent = this.requests(now);

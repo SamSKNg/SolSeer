@@ -100,7 +100,7 @@ test(
       const snapshot = await (await fetch(base + "/api/snapshot")).json();
       assert.equal(snapshot.totalJoins, 1);
       assert.equal(snapshot.pollIntervalMs, 1000);
-      assert.equal(snapshot.requestLimit, 40);
+      assert.equal(snapshot.requestLimit, null);
       assert.equal(snapshot.pagesPerPoll, 1);
       assert.equal(snapshot.minimumPlayers, 13);
       assert.ok(
@@ -177,7 +177,7 @@ test(
         (await readFile(join(configDir, ".env"), "utf8")).includes(dummy),
       );
       const afterSave = await (await fetch(base + "/api/snapshot")).json();
-      assert.equal(afterSave.requestLimit, 40);
+      assert.equal(afterSave.requestLimit, null);
       assert.equal(afterSave.totalJoins, 1);
       assert.ok(!JSON.stringify(afterSave).includes(dummy));
       const preferences = {
@@ -267,7 +267,7 @@ test(
       assert.equal((await cleared.json()).hasCookie, false);
       assert.equal(
         (await (await fetch(base + "/api/snapshot")).json()).requestLimit,
-        3,
+        null,
       );
       assert.ok(!logs.includes(dummy));
       // Browser form navigation differs from the fetch()-based join above.

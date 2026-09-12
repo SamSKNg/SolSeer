@@ -152,7 +152,7 @@ test("authenticated polling fetches only the top page every two seconds", async 
       if (i < 34) now = tracker.nextAt;
     }
     assert.ok(starts.slice(1).every((start, i) => start - starts[i] === 2000));
-    assert.equal(tracker.snapshot().requestLimit, 40);
+    assert.equal(tracker.snapshot().requestLimit, null);
     assert.equal(tracker.snapshot().pagesPerPoll, 1);
     assert.equal(tracker.snapshot().coverageEvery, 0);
     assert.equal(tracker.snapshot().totalRequests, 35);
@@ -173,7 +173,7 @@ test("authentication failure downgrades the schedule without an immediate retry"
   });
   try {
     await tracker.poll();
-    assert.equal(tracker.snapshot().requestLimit, 3);
+    assert.equal(tracker.snapshot().requestLimit, null);
     assert.equal(tracker.snapshot().pollIntervalMs, 20500);
     assert.equal(tracker.nextAt, 1060000);
   } finally {

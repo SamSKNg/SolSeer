@@ -159,7 +159,7 @@ export function NotificationSettings({ initial, token, ready }) {
           />
         </label>
         <p className="settings-description">
-          Default: 1 second. Request budgets and retry backoff can delay polls.
+          Default: 1 second. Roblox rate limits and retry backoff can delay polls.
           This does not change the 500 ms OCR wait.
         </p>
         <label className="settings-consent">

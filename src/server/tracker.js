@@ -105,7 +105,7 @@ export class Tracker {
     if (this.busy) return;
     const wait = this.store.reserve(this.now(), this.requestLimit);
     if (wait) {
-      this.status = "Waiting for quota";
+      this.status = "Waiting for Roblox rate limit";
       this.nextAt = this.now() + wait;
       return;
     }

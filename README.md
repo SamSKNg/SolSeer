@@ -115,17 +115,17 @@ These are comparisons within our sampled servers, not all Roblox servers and def
 
 The rules live in [scorer.js](src/server/scorer.js), retention in [burst-memory.js](src/server/burst-memory.js), and peer comparisons in [peer-growth.js](src/server/peer-growth.js); the shared ordering lives in [signals.js](src/shared/signals.js).
 
-## two-second polling stays on the top page
+## configurable polling and Roblox rate limits
 
-Settings lets you choose a **server polling interval of 1–60 seconds**, defaulting to **1 second**. The preference persists locally and applies without restarting. This controls server-list polling, not the 500 ms OCR wait. With a cookie configured, requests are capped at **40 API attempts per rolling minute**, so a 1-second interval cannot be sustained throughout a whole minute. Each request fetches at most 100 servers and counts as one completed heuristic poll. Authenticated mode does not follow a page cursor; servers falling out of that sample are removed from the UI after 20 seconds.
+Settings lets you choose a **server polling interval of 1–60 seconds**, defaulting to **1 second**. The preference persists locally and applies without restarting. This controls server-list polling, not the 500 ms OCR wait. There is **no local per-minute request cap**, with or without a cookie. Roblox's rate-limit responses determine when polling must pause. Each request fetches at most 100 servers and counts as one completed heuristic poll. Authenticated mode does not follow a page cursor; servers falling out of that sample are removed from the UI after 20 seconds.
 
-**top 100 → configured interval → top 100 → configured interval → top 100**, subject to request budgets and backoff.
+**top 100 → configured interval → top 100 → configured interval → top 100**, subject to Roblox rate limits and backoff.
 
-Without a cookie, polling retains its **3 attempts per minute** budget and top → top → discovery-page rotation. The configured interval does not bypass that budget, so anonymous polling cannot reliably resolve the 15.5-second burst window.
+Without a cookie, polling retains its top → top → discovery-page rotation, but no longer has a three-attempt local cap. Roblox may still rate-limit anonymous requests. The footer reports actual requests in the rolling minute, not a fixed local quota.
 
 A two-second target is not a guarantee that every visible server is observed every two seconds. Population ordering can move servers into or out of the top page, and network or quota delays still apply. "Last seen at 17/20" is not the same as "there are three slots open right now."
 
-Roblox rate limits, slow responses, and errors can delay things further. The tracker respects its local request budget and Roblox's reported cooldowns, including failures and retries. Alerts don't fast-forward polling or add requests. A cookie selects a faster local schedule; **it does not guarantee Roblox will accept that rate**. Authentication failures slow the tracker down.
+Roblox rate limits, slow responses, and errors can delay things further. HTTP 429 responses honor `Retry-After` and `x-ratelimit-reset`, with a minimum 5.5-second wait when no longer delay is provided. Successful responses reporting zero remaining requests also defer polling until the reported reset (or a conservative fallback). Alerts don't fast-forward polling or add requests. **The selected interval does not guarantee Roblox will accept that rate.** Authentication failures still slow the tracker down. The separately invoked polling diagnostic remains bounded to 40 requests; that test limit does not apply to the running app.
 
 There's no startup wait. But restarting the app does not reset Roblox's quota, so don't run multiple copies or restart repeatedly to dodge a cooldown.
 

@@ -26,9 +26,9 @@ test("single-page probe waits for previous traffic, sends 40 two-second requests
     assert.equal(starts[0], 1060250);
     assert.ok(starts.slice(1).every((at, i) => at - starts[i] === 2000));
     assert.equal(store.requests(now).length, 30);
-    // Anonymous mode's three-request budget waits for all but the last two.
-    assert.equal(store.availableIn(now), starts[37] + 60250 - now);
-    assert.ok(store.reserve(now) > 0);
+    // The diagnostic's bound does not impose a local cap on subsequent app traffic.
+    assert.equal(store.availableIn(now), 0);
+    assert.equal(store.reserve(now), 0);
   } finally {
     store.close();
   }
