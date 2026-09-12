@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { LockKeyhole, Save, Trash2, Check, KeyRound } from "lucide-react";
 import "./settings.css";
 import { NotificationSettings } from "./NotificationSettings.jsx";
+import { apiFetch } from "./transport.js";
 
 export function Settings() {
   const [status, setStatus] = useState(null);
@@ -15,7 +16,7 @@ export function Settings() {
   useEffect(() => {
     const request = new AbortController();
     controller.current = request;
-    fetch("/api/settings", { signal: request.signal, cache: "no-store" })
+    apiFetch("/api/settings", { signal: request.signal, cache: "no-store" })
       .then(async (response) => {
         if (!response.ok) throw new Error();
         const result = await response.json();
@@ -40,7 +41,7 @@ export function Settings() {
     const request = new AbortController();
     controller.current = request;
     try {
-      const response = await fetch("/api/settings", {
+      const response = await apiFetch("/api/settings", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

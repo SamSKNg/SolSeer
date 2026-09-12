@@ -68,6 +68,22 @@ export class Tracker {
     clearTimeout(this.timer);
     this.controller?.abort();
   }
+  configurePolling(seconds) {
+    if (!Number.isInteger(seconds) || seconds < 1 || seconds > 60)
+      throw new Error("Polling interval must be 1–60 seconds.");
+    this.preferredInterval = seconds * 1000;
+    this.interval = this.preferredInterval;
+    // Let an in-flight request finish; never erase quota or retry backoff.
+    if (!this.busy) {
+      const delay = Math.max(
+        this.interval,
+        this.nextAt - this.now(),
+        this.store.availableIn(this.now(), this.requestLimit),
+      );
+      if (this.running) this.schedule(delay);
+      else this.nextAt = this.now() + delay;
+    }
+  }
   configureFetch(fetchFn) {
     if (this.busy) {
       this.pendingFetch = fetchFn;
@@ -75,6 +91,7 @@ export class Tracker {
     }
     this.fetchFn = fetchFn;
     Object.assign(this, pollingFor(fetchFn.hasCookie));
+    if (this.preferredInterval) this.interval = this.preferredInterval;
     const delay = Math.max(
       this.interval,
       this.nextAt - this.now(),
@@ -342,6 +359,7 @@ export class Tracker {
         this.fetchFn = this.pendingFetch;
         this.pendingFetch = null;
         Object.assign(this, pollingFor(this.fetchFn.hasCookie));
+        if (this.preferredInterval) this.interval = this.preferredInterval;
         delay = Math.max(delay, this.interval);
       }
       event.duration = this.now() - start;

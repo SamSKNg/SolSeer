@@ -140,6 +140,11 @@ export class ScreenAutomation {
       ],
       {
         windowsHide: true,
+        // The helper launches the same executable for its Node OCR worker.
+        // Electron must run that child as Node, not open another app window.
+        ...(process.versions.electron
+          ? { env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" } }
+          : {}),
         stdio: ["ignore", "pipe", "pipe"],
       },
     );

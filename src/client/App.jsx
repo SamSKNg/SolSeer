@@ -36,6 +36,7 @@ import "./motion.css";
 import { useScrollReveals } from "./useScrollReveals.js";
 import { Settings } from "./Settings.jsx";
 import { useNotifications } from "./useNotifications.js";
+import { apiFetch, snapshotStream } from "./transport.js";
 import {
   compareSignals,
   isActionable,
@@ -120,21 +121,45 @@ function Join({
   compact = false,
   disabled = false,
 }) {
+  const [joining, setJoining] = useState(false);
+  const [joinError, setJoinError] = useState("");
   return (
     <form
       action={`/api/join/${encodeURIComponent(id)}`}
       method="POST"
       target="_blank"
-      onSubmit={disabled ? (event) => event.preventDefault() : undefined}
+      onSubmit={async (event) => {
+        if (disabled || joining) {
+          event.preventDefault();
+          return;
+        }
+        if (!window.solseerDesktop) return;
+        event.preventDefault();
+        setJoining(true);
+        setJoinError("");
+        try {
+          const result = await apiFetch(`/api/join/${encodeURIComponent(id)}`, {
+            method: "POST",
+          });
+          if (!result.ok) throw new Error();
+        } catch {
+          setJoinError(
+            "Could not join. Check Roblox is installed and try again.",
+          );
+        } finally {
+          setJoining(false);
+        }
+      }}
     >
       <button
         className={`join ${compact ? "compact" : ""}`}
         type="submit"
-        disabled={disabled}
+        disabled={disabled || joining}
       >
         {children}
         {disabled ? <MapPin size={15} /> : <ArrowUpRight size={15} />}
       </button>
+      {joinError && <small role="alert">{joinError}</small>}
     </form>
   );
 }
@@ -168,7 +193,7 @@ export function App() {
     setSelected(id);
   });
   useEffect(() => {
-    const stream = new EventSource("/api/events");
+    const stream = snapshotStream();
     stream.onmessage = (event) => {
       receivedAt.current = performance.now();
       const snapshot = JSON.parse(event.data);
@@ -206,14 +231,14 @@ export function App() {
     setAutoJoinBusy(true);
     setAutoJoinError("");
     try {
-      const settingsResponse = await fetch("/api/settings", {
+      const settingsResponse = await apiFetch("/api/settings", {
         signal: controller.signal,
         cache: "no-store",
       });
       if (!settingsResponse.ok) throw new Error();
       const { token, notifications: latestPreferences } =
         await settingsResponse.json();
-      const response = await fetch("/api/settings", {
+      const response = await apiFetch("/api/settings", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -1007,6 +1032,17 @@ export function App() {
                 <a
                   href="/api/joins/export"
                   download="solseer-join-history.json"
+                  onClick={async (event) => {
+                    if (!window.solseerDesktop) return;
+                    event.preventDefault();
+                    try {
+                      await window.solseerDesktop.exportHistory();
+                    } catch {
+                      window.alert(
+                        "Could not export history. Try another destination.",
+                      );
+                    }
+                  }}
                 >
                   Export all history (JSON)
                 </a>

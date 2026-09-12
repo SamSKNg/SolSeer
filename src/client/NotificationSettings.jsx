@@ -3,6 +3,7 @@ import { Bell } from "lucide-react";
 import { DEFAULT_NOTIFICATIONS } from "../shared/notifications.js";
 import { BIOME_GROUPS } from "../shared/biomes.js";
 import { notificationPermission } from "./useNotifications.js";
+import { apiFetch } from "./transport.js";
 
 export function NotificationSettings({ initial, token, ready }) {
   const [preferences, setPreferences] = useState({
@@ -56,7 +57,7 @@ export function NotificationSettings({ initial, token, ready }) {
     const controller = new AbortController();
     request.current = controller;
     try {
-      const response = await fetch("/api/settings", {
+      const response = await apiFetch("/api/settings", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -138,6 +139,29 @@ export function NotificationSettings({ initial, token, ready }) {
         </p>
       )}
       <form onSubmit={save}>
+        <label className="settings-consent">
+          Server polling interval (seconds)
+          <input
+            type="number"
+            min="1"
+            max="60"
+            step="1"
+            required
+            value={preferences.pollIntervalSeconds}
+            disabled={!ready || busy}
+            onChange={(event) =>
+              setPreferences({
+                ...preferences,
+                pollIntervalSeconds:
+                  event.target.value === "" ? "" : Number(event.target.value),
+              })
+            }
+          />
+        </label>
+        <p className="settings-description">
+          Default: 1 second. Request budgets and retry backoff can delay polls.
+          This does not change the 500 ms OCR wait.
+        </p>
         <label className="settings-consent">
           <input
             type="checkbox"

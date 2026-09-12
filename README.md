@@ -8,6 +8,26 @@ So the goal is simple: **spot unusual population growth early, surface a server 
 
 This is not a confirmed biome detector. It's a population tracker with some deliberately early heuristics and a UI I probably spent too long making reflective.
 
+## Desktop app (local preview)
+
+The desktop executable, app window, and browser favicon use `SolSeer Icon.png`. After replacing that source artwork, run `npm run icons` on Windows to regenerate the multi-size `.ico` and PNG in `public/`, then rebuild the app.
+
+SolSeer can now run as a **port-free Electron desktop app**. Launch `SolSeer.exe` from the complete extracted desktop package: no separate Node installation, terminal window, browser tab, or localhost server is needed. The React interface uses a sandboxed preload bridge to communicate with the Node backend; only bundled UI files are served through an internal app protocol. OCR uses the bundled Electron/Node runtime and English model, and fonts are bundled locally too.
+
+Minimize the window to keep tracking and auto-join running. Closing it quits the app and stops its OCR helper. A second desktop launch focuses the existing instance. There is no system-tray mode or automatic updater yet. Stop the old browser-based copy before switching so you do not run two trackers against the same account/settings. Existing preferences and join history remain in `%LOCALAPPDATA%\\solseer` (or your `SOLSEER_CONFIG_DIR` override). History export opens a native Save dialog.
+
+From source:
+
+```powershell
+npm install
+npm run build
+npm run desktop
+```
+
+`npm run package:desktop` builds a fresh native helper in an isolated staging folder and creates a portable Windows x64 desktop ZIP under `release/desktop-*`. Keep all files next to `SolSeer.exe`; do not copy only the executable. This local preview is unsigned and may show a Windows publisher warning. It has not replaced the published browser-based v0.5.4 release.
+
+`npm run test:desktop` runs an isolated Electron smoke test with Roblox polling disabled. It checks the renderer sandbox, IPC settings/snapshots/export, and rejects any attempt by the backend to open a TCP listener. Existing browser development and packaging commands remain available.
+
 ## what this is actually for
 
 Keep solseer open while playing or hunting for rare biomes. It watches Roblox's public server-list data, looks for servers filling quickly, and brings those leads forward so you can decide whether to jump in.
@@ -45,7 +65,7 @@ The adjacent **Auto-Start** toggle clicks Play after two matching scans. After t
 
 A selected target biome remains an Auto-join veto through focus loss and unclear or stale frames, until OCR recognizes another biome.
 
-Every manual or automatic join starts a **60-second auto-join cooldown**, preventing another signal from switching servers while Roblox is waiting at or loading past the Play screen. When Auto-Start has clicked Play and a later biome reading confirms the game view is ready, that cooldown ends early. The current-server card shows the remaining cooldown when presence is available.
+Every manual or automatic join starts a **60-second auto-join cooldown**, preventing another signal from switching servers while Roblox is waiting at or loading past the Play screen. When Auto-Start has clicked Play and a later biome reading confirms the game view is ready, that cooldown ends early. It also ends early after presence confirms arrival in the joined server and a subsequent OCR reading identifies a non-target biome, even when Play was clicked manually. Unreadable scans and pre-arrival readings do not trigger this new path. Target-biome pauses remain in effect independently of the cooldown. The current-server card shows the remaining cooldown when presence is available.
 
 **Copy server link** copies that same direct-app link. Some chat apps won't make `roblox://` links clickable; recipients can paste the full link into their browser's address bar. There is no automatic fallback to normal matchmaking. If the app doesn't open, check that Roblox is installed and that your browser hasn't blocked the launch prompt.
 
@@ -97,11 +117,11 @@ The rules live in [scorer.js](src/server/scorer.js), retention in [burst-memory.
 
 ## two-second polling stays on the top page
 
-With a cookie configured, solseer targets **one top-page request every 2 seconds**, capped at **40 API attempts per rolling minute**. Each request fetches at most 100 servers and counts as one completed heuristic poll. Authenticated mode does not follow a page cursor: faster top-page refreshes are more useful now that servers falling out of that sample are removed from the UI after 20 seconds.
+Settings lets you choose a **server polling interval of 1–60 seconds**, defaulting to **1 second**. The preference persists locally and applies without restarting. This controls server-list polling, not the 500 ms OCR wait. With a cookie configured, requests are capped at **40 API attempts per rolling minute**, so a 1-second interval cannot be sustained throughout a whole minute. Each request fetches at most 100 servers and counts as one completed heuristic poll. Authenticated mode does not follow a page cursor; servers falling out of that sample are removed from the UI after 20 seconds.
 
-**top 100 → 2 seconds → top 100 → 2 seconds → top 100**
+**top 100 → configured interval → top 100 → configured interval → top 100**, subject to request budgets and backoff.
 
-Without a cookie, polling remains **one page every 20.5 seconds / 3 attempts per minute** and retains its top → top → discovery-page rotation. That anonymous cadence cannot resolve the 15.5-second burst window; the UI warns about this rather than pretending it can.
+Without a cookie, polling retains its **3 attempts per minute** budget and top → top → discovery-page rotation. The configured interval does not bypass that budget, so anonymous polling cannot reliably resolve the 15.5-second burst window.
 
 A two-second target is not a guarantee that every visible server is observed every two seconds. Population ordering can move servers into or out of the top page, and network or quota delays still apply. "Last seen at 17/20" is not the same as "there are three slots open right now."
 

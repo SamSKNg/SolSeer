@@ -1,0 +1,12 @@
+/* Hide only the tracks; retain wheel, touchpad and keyboard scrolling. */
+html.desktop-app,
+html.desktop-app * {
+  scrollbar-width: none;
+}
+
+html.desktop-app::-webkit-scrollbar,
+html.desktop-app *::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}

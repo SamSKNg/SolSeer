@@ -21,6 +21,10 @@ function validate(value) {
   ];
   if (
     !value ||
+    (value.pollIntervalSeconds !== undefined &&
+      (!Number.isInteger(value.pollIntervalSeconds) ||
+        value.pollIntervalSeconds < 1 ||
+        value.pollIntervalSeconds > 60)) ||
     required.some((key) => typeof value[key] !== "boolean") ||
     optional.some(
       (key) => value[key] !== undefined && typeof value[key] !== "boolean",
@@ -133,7 +137,22 @@ export class Notifications {
       this.#autoJoinCooldownUntil > snapshot.now &&
       snapshot.automation?.lastAutoStartAt >= this.#autoJoinCooldownStartedAt &&
       snapshot.automation?.biomeAt > snapshot.automation?.lastAutoStartAt;
-    if (this.#autoJoinCooldownUntil <= snapshot.now || completedAutoStart) {
+    const confirmedNonTarget =
+      snapshot.currentServerId === this.#autoJoinCooldownServerId &&
+      snapshot.presence?.serverAt >= this.#autoJoinCooldownStartedAt &&
+      snapshot.automation?.biomeAt > snapshot.presence.serverAt &&
+      snapshot.automation?.status === "scanning" &&
+      !snapshot.automation.playVisible &&
+      snapshot.automation?.biome &&
+      !this.#preferences.biomeTargets.some(
+        (biome) =>
+          normalizeBiome(biome) === normalizeBiome(snapshot.automation.biome),
+      );
+    if (
+      this.#autoJoinCooldownUntil <= snapshot.now ||
+      completedAutoStart ||
+      confirmedNonTarget
+    ) {
       this.#autoJoinCooldownStartedAt = 0;
       this.#autoJoinCooldownUntil = 0;
       this.#autoJoinCooldownServerId = null;

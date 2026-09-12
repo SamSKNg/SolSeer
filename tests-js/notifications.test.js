@@ -16,6 +16,7 @@ const enabled = {
   autoJoinCluster: true,
   autoJoinRecentFull: false,
   autoStart: false,
+  pollIntervalSeconds: 1,
   ocrResolution: "1440p",
   biomeTargets: [],
 };
@@ -25,6 +26,60 @@ const row = (alert = "potential", id = "server") => ({
   players: 17,
   capacity: 20,
   notificationEligible: true,
+});
+
+test("manual startup releases cooldown only for a post-arrival non-target reading", () =>
+  fixture(async (notifications, folder) => {
+    await notifications.save({
+      ...enabled,
+      autoJoin: true,
+      biomeTargets: ["Singularity"],
+      pollIntervalSeconds: 5,
+    });
+    assert.equal(new Notifications(folder).preferences.pollIntervalSeconds, 5);
+    const base = {
+      ...sample(1, [], 9000),
+      currentServerId: "joined",
+      presence: { serverAt: 5000 },
+      automation: { status: "scanning", biome: "Normal", biomeAt: 6000 },
+    };
+    for (const change of [
+      { currentServerId: "old" },
+      { presence: { serverAt: 500 } },
+      { automation: { ...base.automation, biomeAt: 4000 } },
+      { automation: { ...base.automation, biome: null } },
+      { automation: { ...base.automation, biome: "Singularity" } },
+      { automation: { ...base.automation, status: "roblox_not_found" } },
+    ]) {
+      notifications.startJoinCooldown("joined", 1000);
+      assert.equal(
+        notifications.update({ ...base, ...change }).autoJoinCooldownUntil,
+        61000,
+      );
+    }
+    notifications.startJoinCooldown("joined", 1000);
+    assert.equal(notifications.update(base).autoJoinCooldownUntil, null);
+  }));
+
+test("poll interval changes preserve backoff and survive credential changes", () => {
+  const store = new Store();
+  try {
+    const tracker = new Tracker(store, { now: () => 1000000 });
+    tracker.nextAt = 1030000;
+    tracker.configurePolling(1);
+    assert.equal(tracker.interval, 1000);
+    assert.equal(tracker.nextAt, 1030000);
+    const fetchFn = async () => {};
+    fetchFn.hasCookie = true;
+    tracker.configureFetch(fetchFn);
+    assert.equal(tracker.interval, 1000);
+    assert.equal(tracker.nextAt, 1030000);
+    tracker.configurePolling(10);
+    assert.equal(tracker.interval, 10000);
+    assert.throws(() => tracker.configurePolling(0));
+  } finally {
+    store.close();
+  }
 });
 const sample = (poll, rows, now = poll * 5000) => ({
   events: [{ id: poll }],
@@ -103,6 +158,7 @@ test("notification preferences persist independently, validate input and default
       autoJoinCluster: true,
       autoJoinRecentFull: false,
       autoStart: false,
+      pollIntervalSeconds: 1,
       ocrResolution: "1440p",
       biomeTargets: [],
     });
@@ -110,6 +166,10 @@ test("notification preferences persist independently, validate input and default
       null,
       {},
       { ...enabled, enabled: "true" },
+      ...[0, 61, 1.5, "2", null].map((pollIntervalSeconds) => ({
+        ...enabled,
+        pollIntervalSeconds,
+      })),
       { ...enabled, autoJoinRecentFull: "true" },
       { ...enabled, ocrResolution: "720p" },
       { ...enabled, biomeTargets: ["Not a biome"] },

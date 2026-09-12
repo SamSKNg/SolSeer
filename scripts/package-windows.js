@@ -71,10 +71,17 @@ await copyFile(
   join(runtime, "LICENSE"),
   join(app, "licenses", "Node-LICENSE.txt"),
 );
-for (const name of ["react", "react-dom", "scheduler", "lucide-react"]) {
+for (const name of [
+  "react",
+  "react-dom",
+  "scheduler",
+  "lucide-react",
+  "@fontsource/dm-sans",
+  "@fontsource/space-grotesk",
+]) {
   await copyFile(
     join(root, "node_modules", name, "LICENSE"),
-    join(app, "licenses", `${name}-LICENSE.txt`),
+    join(app, "licenses", `${name.replaceAll("/", "-")}-LICENSE.txt`),
   );
 }
 // Explicit runtime dependency allowlist; never copy the whole project or node_modules.
@@ -133,7 +140,10 @@ await writeFile(
       "A shared capture feeds one persistent Tesseract worker for both biome text and Play while Roblox is foreground and maximized at the 1920x1080 or 2560x1440 resolution selected in Settings. English OCR data is bundled; no model download is needed at runtime. Scanning pauses when you switch apps. Auto-Start optionally clicks Play and sends 10 zoom-out wheel steps after the menu disappears; switching apps cancels the burst.",
     )
     .replace("biome feedback", "biome observations")
-    .replace("Server observations and joins last only for the running session.", "Live server observations last for the running session. Join history persists beside local settings and can be exported as JSON from Join history."),
+    .replace(
+      "Server observations and joins last only for the running session.",
+      "Live server observations last for the running session. Join history persists beside local settings and can be exported as JSON from Join history.",
+    ),
 );
 const zip = resolve(
   releases,

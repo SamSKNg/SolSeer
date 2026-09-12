@@ -28,6 +28,7 @@ const preferences = {
   autoJoinCluster: true,
   autoJoinRecentFull: false,
   autoStart: false,
+  pollIntervalSeconds: 1,
   ocrResolution: "1440p",
   biomeTargets: [],
 };
@@ -86,6 +87,26 @@ test("permission is requested only by a deliberate settings click; saving prefer
   expect(fetchMock.mock.calls[0][1].headers["X-Solseer-Token"]).toBe(
     "safe-token",
   );
+});
+
+test("settings save a custom polling interval", async () => {
+  mockNotifications();
+  const fetchMock = vi.fn(async () => ({ ok: true }));
+  vi.stubGlobal("fetch", fetchMock);
+  render(<NotificationSettings initial={preferences} token="test" ready />);
+  const input = screen.getByRole("spinbutton", {
+    name: "Server polling interval (seconds)",
+  });
+  expect(input.value).toBe("1");
+  fireEvent.change(input, { target: { value: "5" } });
+  fireEvent.click(
+    screen.getByRole("button", { name: "Save signal preferences" }),
+  );
+  await screen.findByText(/Signal preferences saved/);
+  expect(
+    JSON.parse(fetchMock.mock.calls[0][1].body).notifications
+      .pollIntervalSeconds,
+  ).toBe(5);
 });
 
 test("settings save independent auto-join choices for early and rapid signals", async () => {

@@ -3,10 +3,15 @@
   "version": "0.5.4",
   "private": true,
   "type": "module",
+  "main": "src/desktop/main.js",
   "engines": {
     "node": ">=22.13.0"
   },
   "scripts": {
+    "icons": "powershell.exe -NoProfile -File scripts/build-icons.ps1",
+    "desktop": "node node_modules/electron/install.js && vite build && node scripts/run-desktop.js .",
+    "test:desktop": "node node_modules/electron/install.js && vite build && node scripts/run-desktop.js scripts/test-desktop.mjs",
+    "package:desktop": "vite build && node scripts/package-desktop.js",
     "dev": "node src/server/index.js --dev",
     "build": "vite build && node scripts/build-screen-helper.js",
     "prestart": "npm run build",
@@ -17,6 +22,8 @@
     "package:windows": "npm run build && node scripts/package-windows.js"
   },
   "dependencies": {
+    "@fontsource/dm-sans": "5.3.0",
+    "@fontsource/space-grotesk": "5.3.0",
     "@tesseract.js-data/eng": "1.0.0",
     "lucide-react": "^0.468.0",
     "react": "^19.1.0",
@@ -24,8 +31,10 @@
     "tesseract.js": "6.0.1"
   },
   "devDependencies": {
+    "@electron/packager": "20.3.0",
     "@testing-library/react": "^16.3.3",
     "@vitejs/plugin-react": "^4.4.0",
+    "electron": "44.3.0",
     "jsdom": "^26.1.0",
     "prettier": "^3.6.2",
     "vite": "^6.3.0",

@@ -16,12 +16,14 @@ import { PresenceTracker } from "./presence-tracker.js";
 import { ScreenAutomation } from "./screen-automation.js";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
+const desktop = process.env.SOLSEER_DESKTOP === "1";
 const dev = process.argv.includes("--dev");
 const port = Number(process.env.PORT || 3000);
 let settings;
 try {
   settings = new LocalSettings({ legacyPath: resolve(root, ".env") });
 } catch (error) {
+  if (desktop) throw error;
   console.error(error.message);
   process.exit(1);
 }
@@ -45,10 +47,14 @@ const notifications = new Notifications(settings.directory, {
     if (launched) tracker.recordJoin(id);
     return launched;
   },
-  onPreferencesChanged: (preferences) => automation.configure(preferences),
+  onPreferencesChanged: (preferences) => {
+    automation.configure(preferences);
+    tracker.configurePolling(preferences.pollIntervalSeconds);
+  },
 });
 automation.configure(notifications.preferences);
-const snapshot = () => {
+tracker.configurePolling(notifications.preferences.pollIntervalSeconds);
+export const snapshot = () => {
   const tracked = tracker.snapshot();
   const accountPresence = presence.snapshot();
   const screen = automation.snapshot();
@@ -83,22 +89,33 @@ const snapshot = () => {
   return { ...value, notifications: notifications.update(value) };
 };
 const streams = new EventStreams(snapshot);
-const vite = dev
-  ? await (
-      await import("vite")
-    ).createServer({ root, server: { middlewareMode: true }, appType: "spa" })
-  : null;
+const desktopListeners = new Set();
+export function subscribe(listener) {
+  desktopListeners.add(listener);
+  return () => desktopListeners.delete(listener);
+}
+const vite =
+  dev && !desktop
+    ? await (
+        await import("vite")
+      ).createServer({ root, server: { middlewareMode: true }, appType: "spa" })
+    : null;
 const broadcast = () => {
+  if (desktop) {
+    const value = snapshot();
+    for (const listener of desktopListeners) listener(value);
+    return;
+  }
   if (!streams.clients.size) snapshot();
   streams.broadcast();
 };
 tracker.onUpdate = broadcast;
 presence.onUpdate = broadcast;
 automation.onUpdate = broadcast;
-const server = http.createServer(async (req, res) => {
+export async function handleRequest(req, res) {
   try {
     // Loopback-only Host allowlist also blocks browser DNS-rebinding access.
-    const actualPort = server.address()?.port;
+    const actualPort = desktop ? 0 : server.address()?.port;
     const allowedHosts = [`localhost:${actualPort}`, `127.0.0.1:${actualPort}`];
     if (
       !allowedHosts.includes(req.headers.host) ||
@@ -291,6 +308,10 @@ const server = http.createServer(async (req, res) => {
           ".js": "text/javascript",
           ".css": "text/css",
           ".svg": "image/svg+xml",
+          ".png": "image/png",
+          ".ico": "image/x-icon",
+          ".woff": "font/woff",
+          ".woff2": "font/woff2",
         }[extname(path)] || "application/octet-stream",
       );
       res.end(content);
@@ -302,8 +323,9 @@ const server = http.createServer(async (req, res) => {
     if (!res.headersSent) res.writeHead(500);
     res.end("Unable to complete request");
   }
-});
-server.on("error", async (error) => {
+}
+const server = desktop ? null : http.createServer(handleRequest);
+server?.on("error", async (error) => {
   console.error(
     error.code === "EADDRINUSE"
       ? `Port ${port} is already in use. Stop the other app first.`
@@ -313,7 +335,7 @@ server.on("error", async (error) => {
   store.close();
   process.exit(1);
 });
-server.listen(port, "127.0.0.1", () => {
+server?.listen(port, "127.0.0.1", () => {
   console.log(`Signal is ready at http://localhost:${server.address().port}`);
   if (process.env.CLUSTER_NO_POLL !== "1") {
     tracker.start();
@@ -321,19 +343,31 @@ server.listen(port, "127.0.0.1", () => {
   }
 });
 const heartbeat = setInterval(broadcast, 1000);
-async function shutdown() {
+export function startDesktop() {
+  if (!desktop) throw new Error("Desktop mode was not selected");
+  if (process.env.CLUSTER_NO_POLL !== "1") {
+    tracker.start();
+    presence.start();
+  }
+}
+export async function dispose() {
   tracker.stop();
   presence.stop();
   automation.stop();
   clearInterval(heartbeat);
   streams.close();
-  server.close();
+  desktopListeners.clear();
+  server?.close();
   await vite?.close();
   // Allow an aborted in-flight request to finish its bookkeeping before exit.
-  setTimeout(() => {
-    store.close();
-    process.exit(0);
-  }, 100);
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  store.close();
 }
-process.once("SIGINT", shutdown);
-process.once("SIGTERM", shutdown);
+if (!desktop) {
+  const shutdown = async () => {
+    await dispose();
+    process.exit(0);
+  };
+  process.once("SIGINT", shutdown);
+  process.once("SIGTERM", shutdown);
+}

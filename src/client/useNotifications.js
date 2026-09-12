@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { apiFetch } from "./transport.js";
 
 export function notificationPermission() {
   return typeof window.Notification === "function"
@@ -64,7 +65,7 @@ export function useNotifications(data, inspect) {
     request.current = controller;
     (async () => {
       try {
-        const response = await fetch("/api/settings", {
+        const response = await apiFetch("/api/settings", {
           signal: controller.signal,
           cache: "no-store",
         });
@@ -76,7 +77,7 @@ export function useNotifications(data, inspect) {
           notificationPermission() !== "granted"
         )
           return;
-        const claimed = await fetch("/api/notifications/claim", {
+        const claimed = await apiFetch("/api/notifications/claim", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",

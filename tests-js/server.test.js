@@ -99,7 +99,7 @@ test(
       );
       const snapshot = await (await fetch(base + "/api/snapshot")).json();
       assert.equal(snapshot.totalJoins, 1);
-      assert.equal(snapshot.pollIntervalMs, 2000);
+      assert.equal(snapshot.pollIntervalMs, 1000);
       assert.equal(snapshot.requestLimit, 40);
       assert.equal(snapshot.pagesPerPoll, 1);
       assert.equal(snapshot.minimumPlayers, 13);
@@ -189,6 +189,7 @@ test(
         autoJoinCluster: false,
         autoJoinRecentFull: false,
         autoStart: false,
+        pollIntervalSeconds: 1,
         ocrResolution: "1440p",
         biomeTargets: [],
       };
