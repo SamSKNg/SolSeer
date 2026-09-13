@@ -51,6 +51,8 @@ function validate(value) {
       ]),
     ),
     ocrResolution: value.ocrResolution ?? "1440p",
+    // Compatibility field for older settings files/clients; never independent.
+    autoStart: Boolean(value.autoJoin),
     biomeTargets,
   };
 }

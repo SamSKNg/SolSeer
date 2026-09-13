@@ -135,6 +135,51 @@
   margin-top: 5px;
   accent-color: #d7dbcb;
 }
+.settings-panel input[type="checkbox"] {
+  appearance: none;
+  position: relative;
+  flex: 0 0 34px;
+  width: 34px;
+  height: 20px;
+  margin: 2px 0 0;
+  border: 1px solid #ffffff45;
+  border-radius: 999px;
+  background: #ffffff12;
+  cursor: pointer;
+}
+.settings-panel input[type="checkbox"]::after {
+  content: "";
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  top: 3px;
+  left: 3px;
+  border-radius: 50%;
+  background: #aaa79e;
+}
+.settings-panel input[type="checkbox"]:checked {
+  background: #bfd0a8;
+  border-color: #bfd0a8;
+}
+.settings-panel input[type="checkbox"]:checked::after {
+  transform: translateX(14px);
+  background: #23291d;
+}
+.settings-panel input[type="checkbox"]:indeterminate::after {
+  transform: translateX(7px);
+  background: #eee8da;
+}
+.settings-panel input[type="checkbox"]:disabled { opacity: .4; cursor: not-allowed; }
+.settings-panel input[type="checkbox"]:focus-visible { outline: 2px solid #eee8da; outline-offset: 3px; }
+.biome-bulk-toggle { font-weight: 600; }
+.biome-bulk-toggle small { color: #aaa79e; font-weight: 400; margin-left: 8px; }
+@media (prefers-reduced-motion: no-preference) {
+  .settings-panel input[type="checkbox"]::after { transition: transform 140ms ease; }
+}
+@media (forced-colors: active) {
+  .settings-panel input[type="checkbox"] { appearance: auto; }
+  .settings-panel input[type="checkbox"]::after { display: none; }
+}
 .notification-settings h3 {
   margin: 24px 0 8px;
   color: #eeeee6;
@@ -202,6 +247,17 @@
 .notification-settings .settings-actions {
   margin-top: 16px;
 }
+.discord-settings .settings-actions { margin-top: 16px; }
+.discord-settings-section { padding: 16px 0 24px; }
+.discord-settings-section + .discord-settings-section {
+  border-top: 1px solid #ffffff24;
+  margin-top: 16px;
+  padding-top: 28px;
+}
+.discord-settings-section h3 { margin: 0 0 18px; }
+.discord-settings-section > p { margin: 12px 0; line-height: 1.7; }
+.discord-field { display: grid; gap: 8px; margin: 20px 0; font-size: 13px; }
+.discord-field input { min-width: 0; padding: 12px; background: #ffffff05; color: #efefea; border: 1px solid #ffffff40; font: inherit; }
 .settings-actions button + button {
   background: transparent;
   color: #bfc1b7;

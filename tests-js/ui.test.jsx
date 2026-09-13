@@ -278,12 +278,13 @@ test("holding bursts stay in the carousel and actionable notice while their gain
   expect(screen.queryByLabelText("Early lead notification")).toBeNull();
 });
 
-test("site branding is solseer text without a logo", () => {
+test("site branding pairs the SolSeer icon with the wordmark", () => {
   vi.stubGlobal("EventSource", FakeEventSource);
   render(<App />);
   const brand = screen.getByRole("link", { name: "solseer home" });
   expect(brand.textContent.trim()).toBe("solseer");
-  expect(brand.querySelector("svg, img, .brand-mark, .brand-dot")).toBeNull();
+  expect(brand.querySelector("img").getAttribute("src")).toBe("/solseer-icon.png");
+  expect(brand.querySelector("img").getAttribute("alt")).toBe("");
 });
 
 test("page entrances restart for navigation but not for polling updates", () => {
@@ -535,6 +536,7 @@ const sendRows = (
   );
 
 test("auto-join is toggleable below Signals to watch and saves the shared preference", async () => {
+  vi.stubGlobal("confirm", vi.fn(() => true));
   vi.stubGlobal("EventSource", FakeEventSource);
   const preferences = {
     enabled: false,
@@ -583,11 +585,11 @@ test("auto-join is toggleable below Signals to watch and saves the shared prefer
     "safe-token",
   );
   expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({
-    notifications: { ...preferences, autoJoin: true },
+    notifications: { ...preferences, autoJoin: true, autoStart: true },
   });
 });
 
-test("Auto-Start requires the fullscreen warning and saves beside auto-join", async () => {
+test("auto-join also enables Play clicks with a fullscreen warning and no separate toggle", async () => {
   vi.stubGlobal("EventSource", FakeEventSource);
   const confirm = vi.fn(() => true);
   vi.stubGlobal("confirm", confirm);
@@ -611,17 +613,18 @@ test("Auto-Start requires the fullscreen warning and saves beside auto-join", as
     .mockResolvedValueOnce({
       ok: true,
       json: async () => ({
-        notifications: { ...preferences, autoStart: true },
+        notifications: { ...preferences, autoJoin: true, autoStart: true },
       }),
     });
   vi.stubGlobal("fetch", fetchMock);
   render(<App />);
   sendRows([], 1, { preferences, pending: 0 });
-  fireEvent.click(screen.getByRole("button", { name: "Auto-Start Off" }));
+  expect(screen.queryByRole("button", { name: /Auto-Start/ })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Auto-join Off" }));
   expect(confirm).toHaveBeenCalledWith(expect.stringMatching(/maximized/));
-  await screen.findByRole("button", { name: "Auto-Start On" });
+  await screen.findByRole("button", { name: "Auto-join On" });
   expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({
-    notifications: { ...preferences, autoStart: true },
+    notifications: { ...preferences, autoJoin: true, autoStart: true },
   });
 });
 

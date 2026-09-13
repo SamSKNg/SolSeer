@@ -45,31 +45,7 @@ import {
 } from "../shared/signals.js";
 
 const labels = signalLabels;
-const biomeColors = {
-  // Matched visually to the heading fills in the supplied August 2026 guide.
-  // Biomes absent from that guide retain their existing colors.
-  Normal: "#c7ccd3",
-  Windy: "#9fcfe0",
-  Snowy: "#dedede",
-  Rainy: "#5865ed",
-  Sandstorm: "#be8b45",
-  Hell: "#b63217",
-  Starfall: "#286bbd",
-  Heaven: "#ebd36a",
-  Corruption: "#713dbe",
-  Null: "#505050",
-  Glitched: "#e5ffff",
-  Dreamspace: "#c77aba",
-  Cyberspace: "#537bde",
-  Singularity: "#d58a6d",
-  "Pumpkin Moon": "#ff842f",
-  Graveyard: "#989bad",
-  "Blazing Sun": "#ffb936",
-  "Blood Rain": "#dc4058",
-  Aurora: "#67f0c8",
-  Eggland: "#fff18c",
-  Incinerator: "#ff6335",
-};
+import { biomeColors } from "../shared/biome-colors.js";
 const pace = (row) =>
   row.growthPer10s == null ? "—" : row.growthPer10s.toFixed(1);
 const peerSummary = (row) =>
@@ -248,6 +224,7 @@ export function App() {
           notifications: {
             ...(latestPreferences ?? preferences),
             [key]: !preferences[key],
+            autoStart: !preferences.autoJoin,
           },
         }),
         signal: controller.signal,
@@ -273,9 +250,8 @@ export function App() {
         autoJoinRequest.current = null;
     }
   };
-  const toggleAutoJoin = () => togglePreference("autoJoin");
-  const toggleAutoStart = () => {
-    const enabled = data.notifications?.preferences.autoStart;
+  const toggleAutoJoin = () => {
+    const enabled = data.notifications?.preferences.autoJoin;
     const resolution =
       data.notifications?.preferences.ocrResolution === "1080p"
         ? "1920 × 1080"
@@ -283,11 +259,11 @@ export function App() {
     if (
       !enabled &&
       !window.confirm(
-        `Auto-Start clicks Play while Roblox is the foreground maximized window on a ${resolution} display. Biome and Play-marker OCR pause when you switch to another app. Continue?`,
+        `Auto-join also clicks Play while Roblox is the foreground maximized window on a ${resolution} display. Biome and Play-marker OCR pause when you switch to another app. Continue?`,
       )
     )
       return;
-    togglePreference("autoStart");
+    togglePreference("autoJoin");
   };
   useEffect(() => {
     if (!selected) return;
@@ -388,6 +364,7 @@ export function App() {
       </a>
       <aside className="sidebar">
         <a className="brand" href="/" aria-label="solseer home">
+          <img src="/solseer-icon.png" alt="" width="30" height="30" />
           solseer
         </a>
         <div className="workspace">
@@ -655,21 +632,6 @@ export function App() {
                     {autoJoinBusy
                       ? "Saving auto-join…"
                       : `Auto-join ${data.notifications?.preferences.autoJoin ? "On" : "Off"}`}
-                  </button>
-                  <button
-                    type="button"
-                    className="auto-join-toggle auto-start-toggle"
-                    aria-pressed={Boolean(
-                      data.notifications?.preferences.autoStart,
-                    )}
-                    disabled={autoJoinBusy || !data.notifications?.preferences}
-                    title={`Windows only. With Roblox foreground and maximized at ${data.notifications?.preferences.ocrResolution === "1080p" ? "1920 × 1080" : "2560 × 1440"}, one OCR pass reads both the biome and Play marker. Scanning pauses while another app is foreground.`}
-                    onClick={toggleAutoStart}
-                  >
-                    <ScanLine size={15} aria-hidden="true" />
-                    {autoJoinBusy
-                      ? "Saving Auto-Start…"
-                      : `Auto-Start ${data.notifications?.preferences.autoStart ? "On" : "Off"}`}
                   </button>
                   <div
                     className="signal-view-switch"

@@ -14,6 +14,7 @@ import { FeedbackCollector } from "./feedback.js";
 import { joinUrl } from "../shared/roblox-links.js";
 import { PresenceTracker } from "./presence-tracker.js";
 import { ScreenAutomation } from "./screen-automation.js";
+import { DiscordIntegration } from "./discord.js";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const desktop = process.env.SOLSEER_DESKTOP === "1";
@@ -37,6 +38,7 @@ const tracker = new Tracker(store, {
 });
 const presence = new PresenceTracker({ request: robloxFetch });
 const automation = new ScreenAutomation();
+const discord = new DiscordIntegration(settings.directory);
 const notifications = new Notifications(settings.directory, {
   onAutoJoin: async ({ id }) => {
     const current = await presence.refresh();
@@ -86,6 +88,7 @@ export const snapshot = () => {
       isCurrentServer: row.id === accountPresence.serverId,
     })),
   };
+  discord.update(value);
   return { ...value, notifications: notifications.update(value) };
 };
 const streams = new EventStreams(snapshot);
@@ -127,7 +130,7 @@ export async function handleRequest(req, res) {
     const url = new URL(req.url, "http://localhost");
     // Never serve secret files, including through Vite's /@fs/ routes.
     if (
-      /(?:^|[\\/])\.env(?:[.\\/]|$)/i.test(decodeURIComponent(url.pathname))
+      /(?:^|[\\/])(?:\.env(?:[.\\/]|$)|discord(?:-[a-f\d-]+\.tmp|\.json)(?:[\\/]|$))/i.test(decodeURIComponent(url.pathname))
     ) {
       res.writeHead(403).end("Forbidden");
       return;
@@ -144,6 +147,7 @@ export async function handleRequest(req, res) {
           JSON.stringify({
             ...settings.status(),
             notifications: notifications.preferences,
+            discord: discord.status(),
             token: settingsToken,
           }),
         );
@@ -190,6 +194,13 @@ export async function handleRequest(req, res) {
             status: 400,
           });
         }
+        if (payload?.discord !== undefined) {
+          if (Object.hasOwn(payload, "cookie") || Object.hasOwn(payload, "notifications"))
+            throw Object.assign(new Error("Save Discord settings separately."), { status: 400 });
+          res.end(JSON.stringify({ discord: await discord.save(payload.discord) }));
+          broadcast();
+          return;
+        }
         if (payload?.notifications !== undefined) {
           if (Object.hasOwn(payload, "cookie"))
             throw Object.assign(
@@ -219,6 +230,7 @@ export async function handleRequest(req, res) {
         res.writeHead(error.status || 500).end(
           JSON.stringify({
             error: error.status ? error.message : "Unable to update settings.",
+            code: ["invalid_settings", "invalid_webhook", "missing_application_id", "missing_webhook", "invalid_biomes", "invalid_mentions"].includes(error.code) ? error.code : undefined,
           }),
         );
       }
@@ -351,6 +363,7 @@ export function startDesktop() {
   }
 }
 export async function dispose() {
+  discord.close();
   tracker.stop();
   presence.stop();
   automation.stop();

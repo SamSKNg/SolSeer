@@ -242,3 +242,17 @@ The normal tests use synthetic server data and isolated settings, not your Roblo
 I wanted something useful to tinker with, not to pretend I'd solved biome detection from a server list. The thresholds will need tuning, coverage isn't complete, and a server can fill between a reading and your click. A flat 20/20 count also hides any arrivals replacing departures.
 
 There's no measured rare-biome accuracy yet. The next useful step is collecting actual outcomes and checking whether these leads beat just joining another busy server. Until then: **a lead worth checking, not a promise.**
+# Discord sharing
+
+Webhook embeds keep the biome-colored side bar and identify the detecting Roblox username with a profile link when available. All role/user/everyone pings are disabled, including previously saved ping settings. Rich Presence displays `Username - unga bunga roll`, the last detected biome and its age, and a Join server button when a server is confirmed. Activity stays visible while SolSeer runs, even without Roblox or OCR data, with a stable SolSeer session timer.
+
+Settings → Discord has two independent, opt-in features:
+
+- **Rich Presence:** enable presence and keep Discord desktop running on Windows with activity sharing enabled. SolSeer uses the shared application ID `1548506509321699348`; users do not create their own Discord applications or supply credentials. Fresh biome detections appear with a Join server button. Discord shows custom buttons to other users, not in your own profile view.
+- **Biome webhook:** create a webhook in your Discord server’s Integrations settings, paste its URL, and choose the biomes to broadcast. These selections are independent of auto-join pause targets. The backend sends a colored biome embed, detecting player's username, and server join link without screenshots or pings.
+
+Rich Presence uses application data, stays visible while Roblox is in the background, and shows the last detected biome for the confirmed current server, SolSeer artwork, and elapsed time. The biome is cleared on server changes; without confirmed server presence it shows a generic radar activity without a join button. Webhooks use the latest accepted biome for the confirmed current server, even when OCR is paused or recent scans fail. Both Discord displays include time since detection; webhook relative timestamps update in Discord. Presence updates are throttled and Discord reconnects are retried. Webhooks suppress repeated server/biome pairs during the session, honor rate limits, and avoid retrying ambiguous deliveries. The latest selected detection after enabling may be broadcast. Restarting the app resets duplicate suppression.
+
+The webhook URL is a secret, stored in plaintext in `discord.json` in SolSeer’s local settings directory; it is never returned in API responses or exported join history. Do not share this file. Both features expose your current biome/server to their respective audiences. Roblox web join links depend on Roblox’s browser-to-app handoff and server availability; exact-server joining is not guaranteed.
+
+References: [Discord Rich Presence](https://docs.discord.com/developers/discord-social-sdk/development-guides/setting-rich-presence), [creating webhooks](https://support.discord.com/hc/en-us/articles/228383668-Intro-to-Webhooks).

@@ -154,14 +154,14 @@ test("tabs support keyboard navigation and preserve drafts across categories", a
   vi.stubGlobal("fetch", fetchMock);
   render(<Settings />);
   await screen.findByText("Already set");
-  expect(screen.getAllByRole("tab")).toHaveLength(5);
+  expect(screen.getAllByRole("tab")).toHaveLength(7);
   expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual([
-    "Auto-join", "OCR & Biomes", "Polling", "Notifications", "Setup",
+    "Auto-join", "Biome Targets", "OCR", "Polling", "Notifications", "Discord", "Setup",
   ]);
   expect(screen.getByText("How to find your own Roblox security cookie")).toBeTruthy();
   expect(screen.getByRole("tablist").getAttribute("aria-orientation")).toBe("vertical");
-  fireEvent.click(screen.getByRole("tab", { name: "OCR & Biomes" }));
-  fireEvent.keyDown(screen.getByRole("tab", { name: "OCR & Biomes" }), {
+  fireEvent.click(screen.getByRole("tab", { name: "OCR" }));
+  fireEvent.keyDown(screen.getByRole("tab", { name: "OCR" }), {
     key: "ArrowDown",
   });
   expect(document.activeElement).toBe(
@@ -175,7 +175,11 @@ test("tabs support keyboard navigation and preserve drafts across categories", a
       name: "Auto-join recent bursts in full servers",
     }),
   );
-  fireEvent.click(screen.getByRole("tab", { name: "OCR & Biomes" }));
+  fireEvent.click(screen.getByRole("tab", { name: "Biome Targets" }));
+  expect(screen.getByRole("group", { name: "Biomes that pause auto-join" })).toBeTruthy();
+  expect(screen.queryByRole("group", { name: "OCR resolution" })).toBeNull();
+  fireEvent.click(screen.getByRole("tab", { name: "OCR" }));
+  expect(screen.queryByRole("group", { name: "Biomes that pause auto-join" })).toBeNull();
   expect(screen.getByRole("group", { name: "OCR resolution" })).toBeTruthy();
   fireEvent.click(screen.getByRole("tab", { name: "Polling" }));
   expect(screen.getByRole("spinbutton").value).toBe("5");

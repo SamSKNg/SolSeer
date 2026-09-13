@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { Bell } from "lucide-react";
 import { DEFAULT_NOTIFICATIONS } from "../shared/notifications.js";
-import { BIOME_GROUPS } from "../shared/biomes.js";
+import { BiomeSelection } from "./BiomeSelection.jsx";
 import { notificationPermission } from "./useNotifications.js";
 import { apiFetch } from "./transport.js";
 
@@ -117,7 +117,7 @@ export function NotificationSettings({
     <section
       className="panel settings-panel notification-settings"
       aria-label="Notification settings"
-      hidden={category === "connection"}
+      hidden={category === "connection" || category === "discord"}
     >
       <div hidden={category !== null && category !== "notifications"}>
         <div className="panel-heading">
@@ -248,6 +248,9 @@ export function NotificationSettings({
           <p className="subtle">
             Choose which new signals the Auto-join switch may open. The master
             switch remains beside Signals to watch on the Server radar page.
+            Auto-join also enables automatic Play clicks; turning it off
+            disables those clicks. Target-biome pauses and join cooldowns still
+            apply.
           </p>
           <label className="settings-consent">
             <input
@@ -305,7 +308,7 @@ export function NotificationSettings({
           hidden={category !== null && category !== "ocr"}
           tabIndex={0}
         >
-          <h3>Fullscreen OCR and biome targets</h3>
+          <h3>Fullscreen OCR</h3>
           <p className="subtle">
             Biome OCR reads a fixed region of the foreground, maximized Roblox
             window and pauses when you switch apps. A shared capture and one
@@ -346,44 +349,28 @@ export function NotificationSettings({
               1920 × 1080
             </label>
           </div>
-          <fieldset className="biome-targets">
-            <legend>Biomes that pause auto-join</legend>
-            <p className="subtle">
-              No targets are selected by default. Matching is case-insensitive
-              and allows small OCR errors.
-            </p>
-            {BIOME_GROUPS.map((group) => (
-              <fieldset className="biome-target-group" key={group.label}>
-                <legend>{group.label}</legend>
-                <div className="biome-target-grid">
-                  {group.biomes.map((biome) => (
-                    <label className="settings-consent" key={biome}>
-                      <input
-                        type="checkbox"
-                        checked={preferences.biomeTargets.includes(biome)}
-                        disabled={!ready || busy}
-                        onChange={(event) =>
-                          setPreferences({
-                            ...preferences,
-                            biomeTargets: event.target.checked
-                              ? [...preferences.biomeTargets, biome]
-                              : preferences.biomeTargets.filter(
-                                  (item) => item !== biome,
-                                ),
-                          })
-                        }
-                      />
-                      {biome}
-                    </label>
-                  ))}
-                </div>
-              </fieldset>
-            ))}
-          </fieldset>
+        </div>
+        <div
+          role={category ? "tabpanel" : undefined}
+          id="settings-panel-biome-targets"
+          aria-labelledby={category ? "settings-tab-biome-targets" : undefined}
+          hidden={category !== null && category !== "biome-targets"}
+          tabIndex={0}
+        >
+          <h3>Biome Targets</h3>
+          <p className="subtle">Choose which detected biomes pause auto-join until OCR recognizes a different biome. These targets are independent of Discord webhook selections.</p>
+          <BiomeSelection
+            legend="Biomes that pause auto-join"
+            selected={preferences.biomeTargets}
+            disabled={!ready || busy}
+            onChange={(selected) =>
+              setPreferences({ ...preferences, biomeTargets: selected })
+            }
+          />
         </div>
         <p className="subtle">
-          Save applies changes across Polling, Notifications, Auto-join, and OCR
-          &amp; Biomes.
+          Save applies changes across Polling, Notifications, Auto-join, OCR,
+          and Biome Targets.
         </p>
         <div className="settings-actions">
           {permission === "default" && (

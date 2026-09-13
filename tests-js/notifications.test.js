@@ -20,6 +20,21 @@ const enabled = {
   ocrResolution: "1440p",
   biomeTargets: [],
 };
+test("Play automation follows auto-join when saving and loading legacy preferences", async () => {
+  const folder = await mkdtemp(join(tmpdir(), "solseer-linked-start-"));
+  try {
+    const notifications = new Notifications(folder);
+    await notifications.save({ ...enabled, autoJoin: true, autoStart: false });
+    assert.equal(notifications.preferences.autoStart, true);
+    assert.equal(new Notifications(folder).preferences.autoStart, true);
+    await notifications.save({ ...enabled, autoJoin: false, autoStart: true });
+    assert.equal(notifications.preferences.autoStart, false);
+    await writeFile(notifications.path, JSON.stringify({ ...enabled, autoJoin: true, autoStart: false }));
+    assert.equal(new Notifications(folder).preferences.autoStart, true);
+  } finally {
+    await rm(folder, { recursive: true, force: true });
+  }
+});
 const row = (alert = "potential", id = "server") => ({
   id,
   alert,

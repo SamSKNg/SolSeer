@@ -106,7 +106,7 @@ export class ScreenAutomation {
   configure(preferences) {
     const resolution = preferences?.ocrResolution ?? "1440p";
     const resolutionChanged = resolution !== this.state.resolution;
-    const autoStart = Boolean(preferences?.autoStart);
+    const autoStart = Boolean(preferences?.autoJoin);
     const autoStartChanged = autoStart !== this.autoStart;
     this.autoStart = autoStart;
     this.state = {

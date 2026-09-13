@@ -2,15 +2,18 @@ import React, { useEffect, useRef, useState } from "react";
 import { LockKeyhole, Save, Trash2, Check, KeyRound } from "lucide-react";
 import "./settings.css";
 import { NotificationSettings } from "./NotificationSettings.jsx";
+import { DiscordSettings } from "./DiscordSettings.jsx";
 import { apiFetch } from "./transport.js";
 
 export function Settings() {
   const [category, setCategory] = useState("connection");
   const categories = [
     ["auto-join", "Auto-join"],
-    ["ocr", "OCR & Biomes"],
+    ["biome-targets", "Biome Targets"],
+    ["ocr", "OCR"],
     ["polling", "Polling"],
     ["notifications", "Notifications"],
+    ["discord", "Discord"],
     ["connection", "Setup"],
   ];
   const [status, setStatus] = useState(null);
@@ -306,6 +309,11 @@ export function Settings() {
           )}
         </section>
       </div>
+      {status && (
+        <div role="tabpanel" id="settings-panel-discord" aria-labelledby="settings-tab-discord" hidden={category !== "discord"} tabIndex={0}>
+          <DiscordSettings initial={status.discord} token={token.current} />
+        </div>
+      )}
       {status && (
         <NotificationSettings
           category={category}

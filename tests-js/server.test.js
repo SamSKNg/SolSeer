@@ -56,6 +56,8 @@ test(
         "/%2eenv",
         "/.env.local",
         "/@fs/C:/project/.env?raw",
+        "/discord.json",
+        "/@fs/C:/project/discord.json?raw",
       ]) {
         const blocked = await fetch(base + path);
         assert.equal(blocked.status, 403);
@@ -130,6 +132,16 @@ test(
       };
       assert.equal(snapshot.joins[0].biome, null);
       const body = JSON.stringify({ cookie: dummy, confirmLocalStorage: true });
+      const discordUrl = "https://discord.com/api/webhooks/123456789012345678/test-only-secret";
+      const discordSave = await fetch(base + "/api/settings", {
+        method: "POST", headers,
+        body: JSON.stringify({ discord: { presenceEnabled: false, applicationId: "", webhookEnabled: false, webhookUrl: discordUrl, biomes: ["Singularity"] } }),
+      });
+      assert.equal(discordSave.status, 200);
+      assert.ok(!(await discordSave.text()).includes("test-only-secret"));
+      const discordStatus = await (await fetch(base + "/api/settings")).json();
+      assert.equal(discordStatus.discord.hasWebhook, true);
+      assert.ok(!JSON.stringify(discordStatus).includes("test-only-secret"));
       for (const overrides of [
         { Origin: "http://evil.test" },
         { "X-Solseer-Token": "bad" },
