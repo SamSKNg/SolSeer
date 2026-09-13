@@ -46,6 +46,7 @@ import {
 
 const labels = signalLabels;
 import { biomeColors } from "../shared/biome-colors.js";
+import { AppUpdates } from "./AppUpdates.jsx";
 const pace = (row) =>
   row.growthPer10s == null ? "—" : row.growthPer10s.toFixed(1);
 const peerSummary = (row) =>
@@ -1125,6 +1126,7 @@ export function App() {
               </div>
             </section>
           )}
+          <AppUpdates banner />
           {tab === "settings" && <Settings />}
           <footer className="page-footer" data-reveal="visible">
             <span>

@@ -12,6 +12,7 @@ import { join, extname } from "node:path";
 import { dispatch } from "./dispatch.js";
 import { assetPath, isAppPage } from "./security.js";
 import { launchRoblox } from "../server/auto-join.js";
+import { UpdateController } from "./updates.js";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 protocol.registerSchemesAsPrivileged([
@@ -29,6 +30,7 @@ app.setAppUserModelId("com.solseer.desktop");
 let window,
   backend,
   unsubscribe,
+  updates,
   quitting = false;
 
 function validateSender(event) {
@@ -55,6 +57,7 @@ if (!app.requestSingleInstanceLock()) {
     if (quitting || !backend) return;
     event.preventDefault();
     quitting = true;
+    updates?.stop();
     unsubscribe?.();
     backend.dispose().finally(() => app.quit());
   });
@@ -106,6 +109,25 @@ if (!app.requestSingleInstanceLock()) {
       );
       process.env.SOLSEER_DESKTOP = "1";
       backend = await import("../server/index.js");
+      const manifest = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
+      const supported = app.isPackaged && process.platform === "win32" && manifest.solseerInstaller === true;
+      const updater = supported ? (await import("electron-updater")).default.autoUpdater : null;
+      updates = new UpdateController({
+        updater, version: app.getVersion(), supported,
+        notify: value => { if (window && !window.isDestroyed()) window.webContents.send("solseer:update-status", value); },
+        confirm: async () => {
+          const result = await dialog.showMessageBox(window, { type: "question", title: "Restart to update SolSeer?", message: "Automation will stop while SolSeer installs the update and restarts.", detail: "Your saved settings and join history will be kept.", buttons: ["Later", "Restart and update"], defaultId: 0, cancelId: 0, noLink: true });
+          return result.response === 1;
+        },
+        shutdown: async () => { unsubscribe?.(); await backend.dispose(); quitting = true; },
+      });
+      ipcMain.handle("solseer:updates", async (event, action) => {
+        validateSender(event);
+        if (action === "status") return updates.snapshot();
+        if (action === "check") return updates.check();
+        if (action === "install") return updates.install();
+        throw new Error("Invalid update action");
+      });
       ipcMain.handle("solseer:request", async (event, message) => {
         validateSender(event);
         const result = await dispatch(backend.handleRequest, message);
@@ -175,6 +197,7 @@ if (!app.requestSingleInstanceLock()) {
       window.once("ready-to-show", () => window.show());
       await window.loadURL("solseer://app/");
       backend.startDesktop();
+      updates.start();
     })
     .catch(async () => {
       dialog.showErrorBox(

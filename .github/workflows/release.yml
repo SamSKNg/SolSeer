@@ -1,0 +1,69 @@
+name: Build Windows installer and draft release
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: read
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  installer:
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.13.0'
+          cache: npm
+      - name: Validate release version
+        shell: pwsh
+        run: |
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          if ($env:GITHUB_REF_NAME -ne "v$version") { throw 'Tag must match package.json version' }
+          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw 'This workflow publishes stable versions only' }
+      - run: npm ci
+      - name: Test
+        shell: pwsh
+        run: |
+          node --test tests-js/*.test.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npx vitest run --maxWorkers=1 --testTimeout=20000
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Build installer (never publish during build)
+        run: npm run package:installer
+        env:
+          CSC_LINK: ${{ secrets.WINDOWS_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}
+      - name: Verify packaged desktop and update metadata
+        run: |
+          node scripts/run-desktop.js scripts/test-desktop.mjs release/installer/win-unpacked/resources/app
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (!(Test-Path release/installer/latest.yml)) { throw 'Missing update metadata' }
+          if (!(Test-Path release/installer/*.blockmap)) { throw 'Missing blockmap' }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: solseer-windows-installer
+          path: |
+            release/installer/*.exe
+            release/installer/*.blockmap
+            release/installer/latest.yml
+          if-no-files-found: error
+      - name: Create or update draft only
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          $existing = gh release view $tag --json isDraft 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            if (!(($existing | ConvertFrom-Json).isDraft)) { throw 'Refusing to modify a published release' }
+          } else {
+            gh release create $tag --verify-tag --draft --title "SolSeer $tag" --generate-notes
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
+          $artifacts = @(Get-ChildItem release/installer -File | Where-Object { $_.Name -match '\.(exe|blockmap)$|^latest\.yml$' } | ForEach-Object FullName)
+          gh release upload $tag @artifacts --clobber
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

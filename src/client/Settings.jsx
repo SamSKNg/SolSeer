@@ -3,6 +3,7 @@ import { LockKeyhole, Save, Trash2, Check, KeyRound } from "lucide-react";
 import "./settings.css";
 import { NotificationSettings } from "./NotificationSettings.jsx";
 import { DiscordSettings } from "./DiscordSettings.jsx";
+import { AppUpdates } from "./AppUpdates.jsx";
 import { apiFetch } from "./transport.js";
 
 export function Settings() {
@@ -135,6 +136,7 @@ export function Settings() {
             <h2>Setup.</h2>
             <LockKeyhole size={20} aria-hidden="true" />
           </div>
+          <AppUpdates />
           <p className="settings-intro">
             A private connection, on this machine only.
           </p>

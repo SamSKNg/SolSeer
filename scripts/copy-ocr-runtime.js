@@ -3,7 +3,7 @@ import { readFile, cp } from "node:fs/promises";
 import { dirname, join, relative, isAbsolute } from "node:path";
 
 // Copy only the two named OCR packages and their declared runtime dependencies.
-export async function copyOcrRuntime(root, app) {
+export async function copyOcrRuntime(root, app, additionalPackages = []) {
   const modules = join(root, "node_modules");
   const seen = new Set();
   async function visit(name, from) {
@@ -20,6 +20,6 @@ export async function copyOcrRuntime(root, app) {
     for (const dependency of Object.keys(pkg.dependencies ?? {}))
       await visit(dependency, manifest);
   }
-  for (const name of ["tesseract.js", "@tesseract.js-data/eng"])
+  for (const name of ["tesseract.js", "@tesseract.js-data/eng", ...additionalPackages])
     await visit(name, join(root, "package.json"));
 }
