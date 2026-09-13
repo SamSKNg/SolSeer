@@ -817,9 +817,9 @@ test("all signal candidates remain reachable and motion is optional without pers
   vi.stubGlobal("matchMedia", () => ({ matches: true }));
   const { container } = render(<App />);
   expect(container.querySelector(".motion-paused")).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Resume reflections" }));
+  fireEvent.click(screen.getByRole("button", { name: "Resume animations" }));
   expect(container.querySelector(".motion-paused")).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Pause reflections" }));
+  fireEvent.click(screen.getByRole("button", { name: "Pause animations" }));
   expect(container.querySelector(".motion-paused")).toBeTruthy();
   sendRows(
     Array.from({ length: 7 }, (_, index) =>

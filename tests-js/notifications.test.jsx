@@ -70,7 +70,7 @@ test("permission is requested only by a deliberate settings click; saving prefer
   );
   expect(Notification.requestPermission).not.toHaveBeenCalled();
   expect(
-    screen.getByRole("button", { name: "Save signal preferences" }).disabled,
+    screen.getByRole("button", { name: "Save preferences" }).disabled,
   ).toBe(false);
   fireEvent.click(
     screen.getByRole("button", { name: "Allow browser notifications" }),
@@ -78,7 +78,7 @@ test("permission is requested only by a deliberate settings click; saving prefer
   await screen.findByText("Browser permission: granted");
   fireEvent.click(screen.getByLabelText("Early leads (+2 within 15.5s)"));
   fireEvent.click(
-    screen.getByRole("button", { name: "Save signal preferences" }),
+    screen.getByRole("button", { name: "Save preferences" }),
   );
   await screen.findByText(/Signal preferences saved/);
   expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
@@ -100,7 +100,7 @@ test("settings save a custom polling interval", async () => {
   expect(input.value).toBe("1");
   fireEvent.change(input, { target: { value: "5" } });
   fireEvent.click(
-    screen.getByRole("button", { name: "Save signal preferences" }),
+    screen.getByRole("button", { name: "Save preferences" }),
   );
   await screen.findByText(/Signal preferences saved/);
   expect(
@@ -124,7 +124,7 @@ test("settings save independent auto-join choices for early and rapid signals", 
     screen.getByLabelText("Auto-join recent bursts in full servers"),
   );
   fireEvent.click(
-    screen.getByRole("button", { name: "Save signal preferences" }),
+    screen.getByRole("button", { name: "Save preferences" }),
   );
   await screen.findByText(/Signal preferences saved/);
   expect(JSON.parse(fetchMock.mock.calls[0][1].body).notifications).toEqual({
@@ -146,7 +146,7 @@ test("settings save the calibrated 1080p mode and biome targets", async () => {
   fireEvent.click(screen.getByLabelText("Glitched"));
   fireEvent.click(screen.getByLabelText("Dreamspace"));
   fireEvent.click(
-    screen.getByRole("button", { name: "Save signal preferences" }),
+    screen.getByRole("button", { name: "Save preferences" }),
   );
   await screen.findByText(/Signal preferences saved/);
   expect(JSON.parse(fetchMock.mock.calls[0][1].body).notifications).toEqual({

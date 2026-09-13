@@ -420,12 +420,12 @@ export function App() {
         </nav>
         <button
           className="motion-toggle"
-          aria-label={motionPaused ? "Resume reflections" : "Pause reflections"}
+          aria-label={motionPaused ? "Resume animations" : "Pause animations"}
           aria-pressed={motionPaused}
           onClick={() => setMotionPaused(!motionPaused)}
         >
           {motionPaused ? <Play size={13} /> : <Pause size={13} />}{" "}
-          <span>Reflections</span>
+          <span>Animations</span>
         </button>
       </aside>
       <main id="main-content">
@@ -617,8 +617,8 @@ export function App() {
           {tab === "servers" && (
             <>
               <div className="signal-section-header" data-reveal="visible">
-                <div className="section-heading signal-section-heading">
-                  <h2>Signals to watch</h2>
+                <div className="panel-heading signal-section-heading">
+                  <h2><span className="window-index">00 /</span> Signals to watch</h2>
                 </div>
                 <div className="signal-heading-actions">
                   {data.automation && (

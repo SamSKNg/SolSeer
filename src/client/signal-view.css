@@ -1,10 +1,21 @@
 .gallery .signal-section-header {
-  padding-left: 3%;
+  padding-left: 0;
+  border-top: 1px solid #ffffff2b;
   margin-bottom: 30px;
 }
 .gallery .signal-section-heading {
-  padding-left: 0;
-  margin-bottom: 16px;
+  padding: 25px 0 16px;
+  margin-bottom: 0;
+}
+.gallery .signal-section-heading h2 {
+  display: flex;
+  align-items: center;
+  font: italic 42px Georgia, serif;
+  letter-spacing: -0.045em;
+}
+.gallery .signal-section-heading .window-index {
+  flex: 0 0 50px;
+  margin-right: 0;
 }
 .gallery .signal-heading-actions {
   display: flex;
@@ -14,6 +25,8 @@
   width: 100%;
   min-width: 0;
   gap: 12px 20px;
+  padding-left: 0;
+  box-sizing: border-box;
 }
 .signal-view-switch {
   display: inline-flex;
@@ -100,7 +113,8 @@
 .ocr-status-inline {
   flex: 0 1 auto;
   margin: 0 auto 0 0;
-  white-space: nowrap;
+  white-space: normal;
+  flex-wrap: wrap;
 }
 .current-server-marker {
   display: inline-flex;
@@ -191,12 +205,20 @@
 }
 @media (max-width: 700px) {
   .gallery .signal-section-header {
-    padding-left: 0;
   }
   .gallery .signal-heading-actions {
     justify-content: flex-end;
+    padding-left: 0;
   }
   .ocr-status-inline {
     flex-basis: 100%;
+  }
+}
+@media (max-width: 420px) {
+  .gallery .signal-heading-actions {
+    padding-left: 0;
+  }
+  .gallery .signal-section-heading h2 {
+    font-size: 32px;
   }
 }

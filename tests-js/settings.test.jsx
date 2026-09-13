@@ -110,7 +110,7 @@ test.each([
   },
 );
 
-test("cookie and notification panels are siblings in reading order, and clearing updates the status", async () => {
+test("category tabs retain settings panels, and clearing updates connection status", async () => {
   vi.stubGlobal(
     "fetch",
     vi
@@ -128,11 +128,12 @@ test("cookie and notification panels are siblings in reading order, and clearing
   render(<Settings />);
   await screen.findByText("Already set");
   const cookiePanel = screen.getByRole("region", { name: "Local settings" });
+  fireEvent.click(screen.getByRole("tab", { name: "Notifications" }));
   const notifications = screen.getByRole("region", {
     name: "Notification settings",
   });
-  expect(cookiePanel.parentElement.className).toBe("settings-layout");
-  expect(cookiePanel.nextElementSibling).toBe(notifications);
+  expect(cookiePanel.parentElement.hidden).toBe(true);
+  fireEvent.click(screen.getByRole("tab", { name: "Setup" }));
   fireEvent.click(
     screen.getByRole("button", { name: "Clear / use anonymous" }),
   );
@@ -142,8 +143,58 @@ test("cookie and notification panels are siblings in reading order, and clearing
   expect(
     screen.getByRole("button", { name: "Save on this machine" }),
   ).toBeTruthy();
+  fireEvent.click(screen.getByRole("tab", { name: "Notifications" }));
   expect(screen.getByRole("region", { name: "Notification settings" })).toBe(
     notifications,
+  );
+});
+
+test("tabs support keyboard navigation and preserve drafts across categories", async () => {
+  const fetchMock = vi.fn(async () => ({ ok: true, json: async () => status }));
+  vi.stubGlobal("fetch", fetchMock);
+  render(<Settings />);
+  await screen.findByText("Already set");
+  expect(screen.getAllByRole("tab")).toHaveLength(5);
+  expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual([
+    "Auto-join", "OCR & Biomes", "Polling", "Notifications", "Setup",
+  ]);
+  expect(screen.getByText("How to find your own Roblox security cookie")).toBeTruthy();
+  expect(screen.getByRole("tablist").getAttribute("aria-orientation")).toBe("vertical");
+  fireEvent.click(screen.getByRole("tab", { name: "OCR & Biomes" }));
+  fireEvent.keyDown(screen.getByRole("tab", { name: "OCR & Biomes" }), {
+    key: "ArrowDown",
+  });
+  expect(document.activeElement).toBe(
+    screen.getByRole("tab", { name: "Polling" }),
+  );
+  fireEvent.change(screen.getByRole("spinbutton"), { target: { value: "5" } });
+  fireEvent.click(screen.getByRole("tab", { name: "Auto-join" }));
+  expect(screen.queryByRole("spinbutton")).toBeNull();
+  fireEvent.click(
+    screen.getByRole("checkbox", {
+      name: "Auto-join recent bursts in full servers",
+    }),
+  );
+  fireEvent.click(screen.getByRole("tab", { name: "OCR & Biomes" }));
+  expect(screen.getByRole("group", { name: "OCR resolution" })).toBeTruthy();
+  fireEvent.click(screen.getByRole("tab", { name: "Polling" }));
+  expect(screen.getByRole("spinbutton").value).toBe("5");
+  fireEvent.click(
+    screen.getByRole("button", { name: "Save preferences" }),
+  );
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+  expect(
+    JSON.parse(fetchMock.mock.calls[1][1].body).notifications,
+  ).toMatchObject({ pollIntervalSeconds: 5, autoJoinRecentFull: true });
+  fireEvent.keyDown(screen.getByRole("tab", { name: "Polling" }), {
+    key: "End",
+  });
+  expect(document.activeElement).toBe(
+    screen.getByRole("tab", { name: "Setup" }),
+  );
+  fireEvent.keyDown(document.activeElement, { key: "Home" });
+  expect(document.activeElement).toBe(
+    screen.getByRole("tab", { name: "Auto-join" }),
   );
 });
 
